@@ -118,5 +118,13 @@ class ENDTrack_Activator
 				wp_create_category($name);
 			}
 		}
+
+		// Auto-create Affiliate Role
+		if (!get_role('afiliado')) {
+			$subscriber = get_role('subscriber');
+			// Use subscriber capabilities as baseline
+			$capabilities = $subscriber ? $subscriber->capabilities : array('read' => true);
+			add_role('afiliado', 'Afiliado', $capabilities);
+		}
 	}
 }
