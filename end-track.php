@@ -10,7 +10,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('ENDTRACK_VERSION', '1.0.0');
+define('ENDTRACK_VERSION', '1.0.1');
 define('ENDTRACK_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('ENDTRACK_PLUGIN_URL', plugin_dir_url(__FILE__));
 
@@ -24,13 +24,25 @@ require_once ENDTRACK_PLUGIN_DIR . 'includes/class-endtrack-ai.php';
 // --- GitHub Updater (Plugin Update Checker) ---
 if (file_exists(ENDTRACK_PLUGIN_DIR . 'plugin-update-checker/plugin-update-checker.php')) {
     require ENDTRACK_PLUGIN_DIR . 'plugin-update-checker/plugin-update-checker.php';
-    $myUpdateChecker = Puc_v4_Factory::buildUpdateChecker(
-        'https://github.com/jcendgit/ENDTRACK', // Cambiar por la URL real de tu repositorio
-        __FILE__,
-        'ENDTrack'
-    );
-    // Optional: Set the branch that contains the stable release.
-    $myUpdateChecker->getVcsApi()->enableReleaseAssets();
+
+    // Support for namespaced v5.x
+    if (class_exists('YahnisElsts\PluginUpdateChecker\v5\PucFactory')) {
+        $myUpdateChecker = \YahnisElsts\PluginUpdateChecker\v5\PucFactory::buildUpdateChecker(
+            'https://github.com/jcendgit/ENDTRACK',
+            __FILE__,
+            'ENDTrack'
+        );
+        $myUpdateChecker->getVcsApi()->enableReleaseAssets();
+    }
+    // Fallback for non-namespaced v4.x
+    elseif (class_exists('Puc_v4_Factory')) {
+        $myUpdateChecker = Puc_v4_Factory::buildUpdateChecker(
+            'https://github.com/jcendgit/ENDTRACK',
+            __FILE__,
+            'ENDTrack'
+        );
+        $myUpdateChecker->getVcsApi()->enableReleaseAssets();
+    }
 }
 
 class ENDTrack
