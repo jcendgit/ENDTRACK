@@ -2,7 +2,7 @@
 /**
  * Plugin Name: ENDTrack
  * Description: Sistema de afiliados y tracking para Escuela Nómada Digital.
- * Version: 1.0.0
+ * Version: 1.0.1
  * Author: END Team
  */
 
