@@ -30,6 +30,26 @@ class ENDTrack_Public
             flush_rewrite_rules();
             update_option('endtrack_flush_rewrites', 'done');
         }
+
+        // Redirect affiliates from wp-admin
+        add_action('admin_init', array($this, 'redirect_affiliates_from_admin'));
+    }
+
+    public function redirect_affiliates_from_admin()
+    {
+        if (defined('DOING_AJAX') && DOING_AJAX) {
+            return;
+        }
+
+        if (current_user_can('manage_options')) {
+            return;
+        }
+
+        $user = wp_get_current_user();
+        if (in_array('afiliado', (array) $user->roles)) {
+            wp_redirect(home_url('/endtrack-panel-afiliado/'));
+            exit;
+        }
     }
 
     public function track_last_login($user_login, $user)
