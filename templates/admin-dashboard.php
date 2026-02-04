@@ -736,11 +736,12 @@
                 <span class="dashicons dashicons-chart-bar" style="margin-top: 4px;"></span>
                 Panel de Estadísticas Pro
             </a>
-            <form method="post" action="<?php echo admin_url('admin-post.php'); ?>" style="margin: 0;">
+            <form method="post" action="<?php echo admin_url('admin-post.php'); ?>" style="margin: 0;" id="update-grafanas-form">
                 <input type="hidden" name="action" value="endtrack_update_all_grafanas">
+                <input type="hidden" name="grafana_password" id="grafana_password" value="">
                 <?php wp_nonce_field('endtrack_update_all_grafanas_action', 'endtrack_update_all_grafanas_nonce'); ?>
                 <button type="submit" class="btn-primary" style="background: #059669;"
-                    onclick="return confirm('¿Actualizar todos los dashboards de Grafana ahora?')">
+                    onclick="var p = prompt('Introduce la contraseña para actualizar:'); if(!p) return false; document.getElementById('grafana_password').value = p; return true;">
                     <span class="dashicons dashicons-update" style="margin-top: 4px; vertical-align: middle;"></span>
                     Actualizar Grafanas
                 </button>
@@ -850,6 +851,7 @@
                                     required>
                                     <option value="1">Venta Directa</option>
                                     <option value="2">Con Registro</option>
+                                    <option value="3">Sin crear páginas</option>
                                 </select>
                             </div>
                         </div>
@@ -911,8 +913,17 @@
                     <tbody>
                         <?php foreach ($launches as $launch):
                             $type_id = isset($launch_configs[$launch]['type']) ? $launch_configs[$launch]['type'] : 1;
-                            $type_label = ($type_id == 2) ? 'Con Registro' : 'Venta Directa';
-                            $type_class = ($type_id == 2) ? 'badge-registration' : 'badge-direct';
+
+                            if ($type_id == 3) {
+                                $type_label = 'Sin crear páginas';
+                                $type_class = 'badge-direct'; // Or create a new style
+                            } elseif ($type_id == 2) {
+                                $type_label = 'Con Registro';
+                                $type_class = 'badge-registration';
+                            } else {
+                                $type_label = 'Venta Directa';
+                                $type_class = 'badge-direct';
+                            }
 
                             // Helper to get pages for this launch + specific type
                             // Mapping logic: launch name -> category slug (should be stored in option, but fallback to sanitize)

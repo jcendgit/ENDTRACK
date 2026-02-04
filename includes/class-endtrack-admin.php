@@ -143,157 +143,159 @@ class ENDTrack_Admin
         }
 
         // --- CREATE PAGES & FOLDERS ---
-        $texts = get_option('endtrack_texts', array());
-        $wf_taxonomy = isset($texts['wf_taxonomy']) ? $texts['wf_taxonomy'] : 'wf_page_folders';
+        if ($launch_type != 3) {
+            $texts = get_option('endtrack_texts', array());
+            $wf_taxonomy = isset($texts['wf_taxonomy']) ? $texts['wf_taxonomy'] : 'wf_page_folders';
 
-        // 1. Create Wicked Folder
-        $folder_id = 0;
-        if (taxonomy_exists($wf_taxonomy)) {
-            $term = wp_insert_term($launch_name, $wf_taxonomy);
-            if (!is_wp_error($term)) {
-                $folder_id = $term['term_id'];
-            } else if (is_wp_error($term) && isset($term->error_data['term_exists'])) {
-                $folder_id = $term->error_data['term_exists'];
+            // 1. Create Wicked Folder
+            $folder_id = 0;
+            if (taxonomy_exists($wf_taxonomy)) {
+                $term = wp_insert_term($launch_name, $wf_taxonomy);
+                if (!is_wp_error($term)) {
+                    $folder_id = $term['term_id'];
+                } else if (is_wp_error($term) && isset($term->error_data['term_exists'])) {
+                    $folder_id = $term->error_data['term_exists'];
+                }
             }
-        }
 
-        // 2. Define pages to create
-        $pages_to_create = array();
-        if ($launch_type == 1) { // Direct
-            $pages_to_create = array(
-                'ventas' => array(
-                    'title' => $launch_name . ' - Ventas',
-                    'template_id' => isset($texts['template_venta']) ? $texts['template_venta'] : '',
-                    'category' => 'venta'
-                ),
-                'gracias_compra' => array(
-                    'title' => $launch_name . ' - Gracias por comprar',
-                    'template_id' => isset($texts['template_gracias_compra']) ? $texts['template_gracias_compra'] : '',
-                    'category' => 'gracias'
-                )
-            );
-        } else { // Reg
-            $pages_to_create = array(
-                'registro' => array(
-                    'title' => $launch_name . ' - Registro',
-                    'template_id' => isset($texts['template_registro']) ? $texts['template_registro'] : '',
-                    'category' => 'registro'
-                ),
-                'gracias_reg' => array(
-                    'title' => $launch_name . ' - Gracias por registrarte',
-                    'template_id' => isset($texts['template_gracias_reg']) ? $texts['template_gracias_reg'] : '',
-                    'category' => 'Gracias Registro'
-                ),
-                'ventas' => array(
-                    'title' => $launch_name . ' - Ventas',
-                    'template_id' => isset($texts['template_venta']) ? $texts['template_venta'] : '',
-                    'category' => 'venta'
-                ),
-                'gracias_compra' => array(
-                    'title' => $launch_name . ' - Gracias por comprar',
-                    'template_id' => isset($texts['template_gracias_compra']) ? $texts['template_gracias_compra'] : '',
-                    'category' => 'gracias'
-                )
-            );
-        }
+            // 2. Define pages to create
+            $pages_to_create = array();
+            if ($launch_type == 1) { // Direct
+                $pages_to_create = array(
+                    'ventas' => array(
+                        'title' => $launch_name . ' - Ventas',
+                        'template_id' => isset($texts['template_venta']) ? $texts['template_venta'] : '',
+                        'category' => 'venta'
+                    ),
+                    'gracias_compra' => array(
+                        'title' => $launch_name . ' - Gracias por comprar',
+                        'template_id' => isset($texts['template_gracias_compra']) ? $texts['template_gracias_compra'] : '',
+                        'category' => 'gracias'
+                    )
+                );
+            } else { // Reg
+                $pages_to_create = array(
+                    'registro' => array(
+                        'title' => $launch_name . ' - Registro',
+                        'template_id' => isset($texts['template_registro']) ? $texts['template_registro'] : '',
+                        'category' => 'registro'
+                    ),
+                    'gracias_reg' => array(
+                        'title' => $launch_name . ' - Gracias por registrarte',
+                        'template_id' => isset($texts['template_gracias_reg']) ? $texts['template_gracias_reg'] : '',
+                        'category' => 'Gracias Registro'
+                    ),
+                    'ventas' => array(
+                        'title' => $launch_name . ' - Ventas',
+                        'template_id' => isset($texts['template_venta']) ? $texts['template_venta'] : '',
+                        'category' => 'venta'
+                    ),
+                    'gracias_compra' => array(
+                        'title' => $launch_name . ' - Gracias por comprar',
+                        'template_id' => isset($texts['template_gracias_compra']) ? $texts['template_gracias_compra'] : '',
+                        'category' => 'gracias'
+                    )
+                );
+            }
 
-        $created_pages = array();
-        foreach ($pages_to_create as $slug_key => $page_info) {
-            $page_args = array(
-                'post_title' => $page_info['title'],
-                'post_status' => 'publish',
-                'post_type' => 'page',
-                'post_name' => sanitize_title($page_info['title'])
-            );
+            $created_pages = array();
+            foreach ($pages_to_create as $slug_key => $page_info) {
+                $page_args = array(
+                    'post_title' => $page_info['title'],
+                    'post_status' => 'publish',
+                    'post_type' => 'page',
+                    'post_name' => sanitize_title($page_info['title'])
+                );
 
-            $post_id = wp_insert_post($page_args);
+                $post_id = wp_insert_post($page_args);
 
-            if ($post_id) {
-                $created_pages[$slug_key] = $post_id;
-                // Assign to Wicked Folder
-                if ($folder_id) {
-                    wp_set_object_terms($post_id, array((int) $folder_id), $wf_taxonomy);
-                }
-
-                // Assign to Launch Category
-                wp_set_object_terms($post_id, array((int) $cat_id), 'category');
-
-                // Assign specific page category
-                if (!empty($page_info['category'])) {
-                    $specific_cat_name = $page_info['category'];
-                    // Check if category exists, if not create it
-                    $term = term_exists($specific_cat_name, 'category');
-                    if ($term === 0 || $term === null) {
-                        $term = wp_create_category($specific_cat_name); // Returns term_id
-                        $specific_cat_id = $term;
-                    } else {
-                        $specific_cat_id = is_array($term) ? $term['term_id'] : $term;
+                if ($post_id) {
+                    $created_pages[$slug_key] = $post_id;
+                    // Assign to Wicked Folder
+                    if ($folder_id) {
+                        wp_set_object_terms($post_id, array((int) $folder_id), $wf_taxonomy);
                     }
 
-                    if ($specific_cat_id) {
-                        wp_set_object_terms($post_id, array((int) $specific_cat_id), 'category', true); // Append
-                    }
-                }
+                    // Assign to Launch Category
+                    wp_set_object_terms($post_id, array((int) $cat_id), 'category');
 
-                // Apply Elementor Template
-                if (!empty($page_info['template_id'])) {
-                    $template_id = $page_info['template_id'];
-                    $template_data = get_post_meta($template_id, '_elementor_data', true);
-
-                    if (!empty($template_data)) {
-                        // If it's the registration page, ensure the button ID is correct
-                        if ($slug_key === 'registro') {
-                            $template_data = $this->update_elementor_form_button_id($template_data, 'add_suscrito');
-                        }
-
-                        // 1. Copy Data
-                        // Ensure data is slashed. update_elementor_form_button_id returns slashed data.
-                        // If we didn't process it, we should slash it to be safe as Elementor expects slashed JSON.
-                        if ($slug_key !== 'registro') {
-                            $template_data = wp_slash($template_data);
-                        }
-                        update_post_meta($post_id, '_elementor_data', $template_data);
-
-                        // 2. Set Edit Mode
-                        update_post_meta($post_id, '_elementor_edit_mode', 'builder');
-                        update_post_meta($post_id, '_elementor_template_type', 'page');
-
-                        // 3. Copy Page Template (Canvas/Full Width)
-                        $page_template = get_post_meta($template_id, '_wp_page_template', true);
-                        if (!empty($page_template)) {
-                            update_post_meta($post_id, '_wp_page_template', $page_template);
+                    // Assign specific page category
+                    if (!empty($page_info['category'])) {
+                        $specific_cat_name = $page_info['category'];
+                        // Check if category exists, if not create it
+                        $term = term_exists($specific_cat_name, 'category');
+                        if ($term === 0 || $term === null) {
+                            $term = wp_create_category($specific_cat_name); // Returns term_id
+                            $specific_cat_id = $term;
                         } else {
-                            // Default to canvas if missing, as usually desired for LPs
-                            update_post_meta($post_id, '_wp_page_template', 'elementor_canvas');
+                            $specific_cat_id = is_array($term) ? $term['term_id'] : $term;
                         }
 
-                        // 4. Copy Page Settings (Styles, etc)
-                        $page_settings = get_post_meta($template_id, '_elementor_page_settings', true);
-                        if (!empty($page_settings)) {
-                            update_post_meta($post_id, '_elementor_page_settings', $page_settings);
+                        if ($specific_cat_id) {
+                            wp_set_object_terms($post_id, array((int) $specific_cat_id), 'category', true); // Append
                         }
-
-                        // 5. Copy Version
-                        $version = get_post_meta($template_id, '_elementor_version', true);
-                        if (!empty($version)) {
-                            update_post_meta($post_id, '_elementor_version', $version);
-                        }
-
-                        // 6. Force CSS Generation - DISABLED TEMPORARILY TO FIX FATAL ERROR
-                        /*
-                        if (class_exists('\Elementor\Core\Files\CSS\Post')) {
-                           try {
-                                $post_css = new \Elementor\Core\Files\CSS\Post($post_id);
-                                $post_css->update();
-                            } catch (\Throwable $e) {
-                                error_log("ENDTrack Error: Failed to generate CSS for post $post_id: " . $e->getMessage());
-                            }
-                        }
-                        */
                     }
-                } else {
-                    $log_file = WP_CONTENT_DIR . '/endtrack_debug.log';
-                    error_log("ENDTrack Debug: No template_id found for page $slug_key\n", 3, $log_file);
+
+                    // Apply Elementor Template
+                    if (!empty($page_info['template_id'])) {
+                        $template_id = $page_info['template_id'];
+                        $template_data = get_post_meta($template_id, '_elementor_data', true);
+
+                        if (!empty($template_data)) {
+                            // If it's the registration page, ensure the button ID is correct
+                            if ($slug_key === 'registro') {
+                                $template_data = $this->update_elementor_form_button_id($template_data, 'add_suscrito');
+                            }
+
+                            // 1. Copy Data
+                            // Ensure data is slashed. update_elementor_form_button_id returns slashed data.
+                            // If we didn't process it, we should slash it to be safe as Elementor expects slashed JSON.
+                            if ($slug_key !== 'registro') {
+                                $template_data = wp_slash($template_data);
+                            }
+                            update_post_meta($post_id, '_elementor_data', $template_data);
+
+                            // 2. Set Edit Mode
+                            update_post_meta($post_id, '_elementor_edit_mode', 'builder');
+                            update_post_meta($post_id, '_elementor_template_type', 'page');
+
+                            // 3. Copy Page Template (Canvas/Full Width)
+                            $page_template = get_post_meta($template_id, '_wp_page_template', true);
+                            if (!empty($page_template)) {
+                                update_post_meta($post_id, '_wp_page_template', $page_template);
+                            } else {
+                                // Default to canvas if missing, as usually desired for LPs
+                                update_post_meta($post_id, '_wp_page_template', 'elementor_canvas');
+                            }
+
+                            // 4. Copy Page Settings (Styles, etc)
+                            $page_settings = get_post_meta($template_id, '_elementor_page_settings', true);
+                            if (!empty($page_settings)) {
+                                update_post_meta($post_id, '_elementor_page_settings', $page_settings);
+                            }
+
+                            // 5. Copy Version
+                            $version = get_post_meta($template_id, '_elementor_version', true);
+                            if (!empty($version)) {
+                                update_post_meta($post_id, '_elementor_version', $version);
+                            }
+
+                            // 6. Force CSS Generation - DISABLED TEMPORARILY TO FIX FATAL ERROR
+                            /*
+                            if (class_exists('\Elementor\Core\Files\CSS\Post')) {
+                               try {
+                                    $post_css = new \Elementor\Core\Files\CSS\Post($post_id);
+                                    $post_css->update();
+                                } catch (\Throwable $e) {
+                                    error_log("ENDTrack Error: Failed to generate CSS for post $post_id: " . $e->getMessage());
+                                }
+                            }
+                            */
+                        }
+                    } else {
+                        $log_file = WP_CONTENT_DIR . '/endtrack_debug.log';
+                        error_log("ENDTrack Debug: No template_id found for page $slug_key\n", 3, $log_file);
+                    }
                 }
             }
         }
@@ -454,6 +456,11 @@ class ENDTrack_Admin
         }
 
         check_admin_referer('endtrack_update_all_grafanas_action', 'endtrack_update_all_grafanas_nonce');
+
+        $password = isset($_POST['grafana_password']) ? sanitize_text_field($_POST['grafana_password']) : '';
+        if ($password !== 'chorlitejo') {
+            wp_die('Contraseña incorrecta para esta acción.');
+        }
 
         $launches = get_option('endtrack_launches', array());
         $mapping = get_option('endtrack_launches_mapping', array());
