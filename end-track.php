@@ -10,7 +10,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('ENDTRACK_VERSION', '1.0.3');
+define('ENDTRACK_VERSION', '1.0.4');
 define('ENDTRACK_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('ENDTRACK_PLUGIN_URL', plugin_dir_url(__FILE__));
 
