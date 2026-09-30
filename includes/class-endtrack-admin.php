@@ -10,9 +10,14 @@ class ENDTrack_Admin
         add_action('admin_post_endtrack_delete_launch', array($this, 'handle_delete_launch'));
         add_action('admin_post_endtrack_save_texts', array($this, 'handle_save_texts'));
         add_action('admin_post_endtrack_save_integrations', array($this, 'handle_save_integrations'));
+        add_action('admin_post_endtrack_save_products', array($this, 'handle_save_products'));
+        add_action('admin_post_endtrack_save_affiliate_pixels', array($this, 'handle_save_affiliate_pixels'));
         add_action('admin_post_endtrack_create_grafana', array($this, 'handle_create_grafana_dashboard'));
+        add_action('admin_post_endtrack_delete_grafana', array($this, 'handle_delete_grafana'));
         add_action('admin_post_endtrack_update_all_grafanas', array($this, 'handle_update_all_grafanas'));
+        add_action('admin_post_endtrack_flush_rewrites', array($this, 'handle_flush_rewrites'));
         add_action('wp_ajax_endtrack_save_commission', array($this, 'ajax_save_commission'));
+        add_action('wp_ajax_endtrack_save_upfront', array($this, 'ajax_save_upfront'));
         add_action('admin_init', array($this, 'migrate_launches'));
         add_action('admin_init', array($this, 'add_thrivecart_columns'));
         add_action('wp_ajax_endtrack_toggle_affiliate_link', array($this, 'ajax_toggle_affiliate_link'));
@@ -20,6 +25,12 @@ class ENDTrack_Admin
         add_action('wp_ajax_endtrack_delete_payment', array($this, 'ajax_delete_payment'));
         add_action('wp_ajax_endtrack_delete_affiliate', array($this, 'ajax_delete_affiliate'));
         add_action('admin_init', array($this, 'ensure_global_categories'));
+        add_action('init', array($this, 'enable_page_categories'), 99);
+    }
+
+    public function enable_page_categories()
+    {
+        register_taxonomy_for_object_type('category', 'page');
     }
 
     public function add_admin_menu()
@@ -57,6 +68,10 @@ class ENDTrack_Admin
 
         $launch_name = sanitize_text_field($_POST['launch_name']);
         $launch_type = isset($_POST['launch_type']) ? intval($_POST['launch_type']) : 1; // 1: Direct, 2: Reg
+        $url_venta = isset($_POST['url_venta']) ? esc_url_raw($_POST['url_venta']) : '';
+        $url_gracias_compra = isset($_POST['url_gracias_compra']) ? esc_url_raw($_POST['url_gracias_compra']) : '';
+        $url_registro = isset($_POST['url_registro']) ? esc_url_raw($_POST['url_registro']) : '';
+        $url_gracias_reg = isset($_POST['url_gracias_registro']) ? esc_url_raw($_POST['url_gracias_registro']) : '';
 
         if (empty($launch_name)) {
             wp_die('El nombre del lanzamiento no puede estar vacío.');
@@ -89,7 +104,8 @@ class ENDTrack_Admin
             $has_tipo = $wpdb->get_results("SHOW COLUMNS FROM $table LIKE '$col_tipo_cat'");
             if (empty($has_tipo)) {
                 $wpdb->query("ALTER TABLE $table ADD COLUMN $col_tipo_cat TINYINT(1) DEFAULT 0");
-            } else {
+            }
+            else {
                 // Ensure it's TINYINT if it was VARCHAR (migration/fix)
                 $wpdb->query("ALTER TABLE $table MODIFY COLUMN $col_tipo_cat TINYINT(1) DEFAULT 0");
             }
@@ -125,22 +141,8 @@ class ENDTrack_Admin
         $visibility_map[$launch_name] = false;
         update_option('endtrack_launch_visibility', $visibility_map);
 
-        // 4. Create Grafana Dashboard
-        require_once ENDTRACK_PLUGIN_DIR . 'includes/class-endtrack-grafana.php';
-        $dashboard_url = ENDTrack_Grafana::create_dashboard($launch_name, $safe_launch_name, $launch_type);
-
+        // Grafana Dashboard Creation Removed (Native Panel Used)
         $msg = 'launch_created';
-
-        if (!is_wp_error($dashboard_url)) {
-            // Save dashboard link
-            $dashboards = get_option('endtrack_launch_dashboards', array());
-            $dashboards[$safe_launch_name] = $dashboard_url;
-            update_option('endtrack_launch_dashboards', $dashboards);
-        } else {
-            // Log error silently or pass as message warning
-            $msg = 'launch_created_grafana_error';
-            // Optionally logs: error_log($dashboard_url->get_error_message());
-        }
 
         // --- CREATE PAGES & FOLDERS ---
         if ($launch_type != 3) {
@@ -153,7 +155,8 @@ class ENDTrack_Admin
                 $term = wp_insert_term($launch_name, $wf_taxonomy);
                 if (!is_wp_error($term)) {
                     $folder_id = $term['term_id'];
-                } else if (is_wp_error($term) && isset($term->error_data['term_exists'])) {
+                }
+                else if (is_wp_error($term) && isset($term->error_data['term_exists'])) {
                     $folder_id = $term->error_data['term_exists'];
                 }
             }
@@ -164,35 +167,36 @@ class ENDTrack_Admin
                 $pages_to_create = array(
                     'ventas' => array(
                         'title' => $launch_name . ' - Ventas',
-                        'template_id' => isset($texts['template_venta']) ? $texts['template_venta'] : '',
+                        'reference_url' => $url_venta,
                         'category' => 'venta'
                     ),
                     'gracias_compra' => array(
                         'title' => $launch_name . ' - Gracias por comprar',
-                        'template_id' => isset($texts['template_gracias_compra']) ? $texts['template_gracias_compra'] : '',
+                        'reference_url' => $url_gracias_compra,
                         'category' => 'gracias'
                     )
                 );
-            } else { // Reg
+            }
+            else { // Reg
                 $pages_to_create = array(
                     'registro' => array(
                         'title' => $launch_name . ' - Registro',
-                        'template_id' => isset($texts['template_registro']) ? $texts['template_registro'] : '',
+                        'reference_url' => $url_registro,
                         'category' => 'registro'
                     ),
                     'gracias_reg' => array(
                         'title' => $launch_name . ' - Gracias por registrarte',
-                        'template_id' => isset($texts['template_gracias_reg']) ? $texts['template_gracias_reg'] : '',
+                        'reference_url' => $url_gracias_reg,
                         'category' => 'Gracias Registro'
                     ),
                     'ventas' => array(
                         'title' => $launch_name . ' - Ventas',
-                        'template_id' => isset($texts['template_venta']) ? $texts['template_venta'] : '',
+                        'reference_url' => $url_venta,
                         'category' => 'venta'
                     ),
                     'gracias_compra' => array(
                         'title' => $launch_name . ' - Gracias por comprar',
-                        'template_id' => isset($texts['template_gracias_compra']) ? $texts['template_gracias_compra'] : '',
+                        'reference_url' => $url_gracias_compra,
                         'category' => 'gracias'
                     )
                 );
@@ -213,11 +217,11 @@ class ENDTrack_Admin
                     $created_pages[$slug_key] = $post_id;
                     // Assign to Wicked Folder
                     if ($folder_id) {
-                        wp_set_object_terms($post_id, array((int) $folder_id), $wf_taxonomy);
+                        wp_set_object_terms($post_id, array((int)$folder_id), $wf_taxonomy);
                     }
 
                     // Assign to Launch Category
-                    wp_set_object_terms($post_id, array((int) $cat_id), 'category');
+                    wp_set_object_terms($post_id, array((int)$cat_id), 'category');
 
                     // Assign specific page category
                     if (!empty($page_info['category'])) {
@@ -227,102 +231,66 @@ class ENDTrack_Admin
                         if ($term === 0 || $term === null) {
                             $term = wp_create_category($specific_cat_name); // Returns term_id
                             $specific_cat_id = $term;
-                        } else {
+                        }
+                        else {
                             $specific_cat_id = is_array($term) ? $term['term_id'] : $term;
                         }
 
                         if ($specific_cat_id) {
-                            wp_set_object_terms($post_id, array((int) $specific_cat_id), 'category', true); // Append
+                            wp_set_object_terms($post_id, array((int)$specific_cat_id), 'category', true); // Append
                         }
                     }
 
-                    // Apply Elementor Template
-                    if (!empty($page_info['template_id'])) {
-                        $template_id = $page_info['template_id'];
-                        $template_data = get_post_meta($template_id, '_elementor_data', true);
-
-                        if (!empty($template_data)) {
-                            // If it's the registration page, ensure the button ID is correct
-                            if ($slug_key === 'registro') {
-                                $template_data = $this->update_elementor_form_button_id($template_data, 'add_suscrito');
-                            }
-
-                            // 1. Copy Data
-                            // Ensure data is slashed. update_elementor_form_button_id returns slashed data.
-                            // If we didn't process it, we should slash it to be safe as Elementor expects slashed JSON.
-                            if ($slug_key !== 'registro') {
-                                $template_data = wp_slash($template_data);
-                            }
-                            update_post_meta($post_id, '_elementor_data', $template_data);
-
-                            // 2. Set Edit Mode
-                            update_post_meta($post_id, '_elementor_edit_mode', 'builder');
-                            update_post_meta($post_id, '_elementor_template_type', 'page');
-
-                            // 3. Copy Page Template (Canvas/Full Width)
-                            $page_template = get_post_meta($template_id, '_wp_page_template', true);
-                            if (!empty($page_template)) {
-                                update_post_meta($post_id, '_wp_page_template', $page_template);
-                            } else {
-                                // Default to canvas if missing, as usually desired for LPs
-                                update_post_meta($post_id, '_wp_page_template', 'elementor_canvas');
-                            }
-
-                            // 4. Copy Page Settings (Styles, etc)
-                            $page_settings = get_post_meta($template_id, '_elementor_page_settings', true);
-                            if (!empty($page_settings)) {
-                                update_post_meta($post_id, '_elementor_page_settings', $page_settings);
-                            }
-
-                            // 5. Copy Version
-                            $version = get_post_meta($template_id, '_elementor_version', true);
-                            if (!empty($version)) {
-                                update_post_meta($post_id, '_elementor_version', $version);
-                            }
-
-                            // 6. Force CSS Generation - DISABLED TEMPORARILY TO FIX FATAL ERROR
-                            /*
-                            if (class_exists('\Elementor\Core\Files\CSS\Post')) {
-                               try {
-                                    $post_css = new \Elementor\Core\Files\CSS\Post($post_id);
-                                    $post_css->update();
-                                } catch (\Throwable $e) {
-                                    error_log("ENDTrack Error: Failed to generate CSS for post $post_id: " . $e->getMessage());
-                                }
-                            }
-                            */
-                        }
-                    } else {
-                        $log_file = WP_CONTENT_DIR . '/endtrack_debug.log';
-                        error_log("ENDTrack Debug: No template_id found for page $slug_key\n", 3, $log_file);
-                    }
+                    // Set up as empty Elementor canvas page (AI will generate the content)
+                    update_post_meta($post_id, '_elementor_edit_mode', 'builder');
+                    update_post_meta($post_id, '_elementor_template_type', 'page');
+                    update_post_meta($post_id, '_wp_page_template', 'elementor_canvas');
                 }
             }
         }
 
-        // AI Copy Generation (if prompt provided)
-        if (isset($_POST['ai_prompt']) && !empty(trim($_POST['ai_prompt']))) {
-            $ai_prompt = sanitize_textarea_field($_POST['ai_prompt']);
+        // AI Copy Generation (if prompt or reference URLs provided)
+        $ai_prompt_raw = isset($_POST['ai_prompt']) ? trim($_POST['ai_prompt']) : '';
+        $has_urls = !empty($url_venta) || !empty($url_gracias_compra) || !empty($url_registro) || !empty($url_gracias_reg);
 
-            // Generate AI copy for each created page
+        if (!empty($ai_prompt_raw) || $has_urls) {
+            $base_prompt = !empty($ai_prompt_raw)
+                ? sanitize_textarea_field($ai_prompt_raw)
+                : 'Crea el copy para esta página de lanzamiento.';
+
+            $page_url_map = array(
+                'ventas' => $url_venta,
+                'registro' => $url_registro,
+                'gracias_compra' => $url_gracias_compra,
+                'gracias_reg' => $url_gracias_reg,
+            );
+
             $page_types = array(
                 'ventas' => 'ventas',
                 'registro' => 'registro',
                 'gracias_compra' => 'gracias',
-                'gracias_reg' => 'gracias_registro'
+                'gracias_reg' => 'gracias_registro',
             );
 
             foreach ($page_types as $slug_key => $page_type) {
-                if (isset($created_pages[$slug_key]) && $created_pages[$slug_key] > 0) {
-                    $result = ENDTrack_AI::generate_copy_for_page(
-                        $created_pages[$slug_key],
-                        $page_type,
-                        $ai_prompt
-                    );
+                if (!isset($created_pages[$slug_key]) || !$created_pages[$slug_key])
+                    continue;
 
-                    if (is_wp_error($result)) {
-                        error_log("ENDTrack AI Error for $slug_key: " . $result->get_error_message());
-                    }
+                $ref_url = !empty($page_url_map[$slug_key]) ? $page_url_map[$slug_key] : '';
+                $prompt = $base_prompt;
+
+                if (!empty($ref_url)) {
+                    $ref_context = $this->extract_url_context($ref_url);
+                    $prompt = "REFERENCIA DE DISEÑO: Imita la estructura y número de bloques de la siguiente URL.\n"
+                        . "URL: {$ref_url}\n"
+                        . (!empty($ref_context) ? "\n{$ref_context}\n" : '')
+                        . "\nINSTRUCCIÓN DEL USUARIO:\n{$base_prompt}";
+                }
+
+                $result = ENDTrack_AI::generate_copy_for_page($created_pages[$slug_key], $page_type, $prompt);
+
+                if (is_wp_error($result)) {
+                    error_log("ENDTrack AI Error for {$slug_key}: " . $result->get_error_message());
                 }
             }
         }
@@ -431,8 +399,11 @@ class ENDTrack_Admin
             }
         }
 
+        $launch_configs = get_option('endtrack_launch_configs', array());
+        $launch_type = isset($launch_configs[$safe_launch_name]['type']) ? $launch_configs[$safe_launch_name]['type'] : 1;
+
         require_once ENDTRACK_PLUGIN_DIR . 'includes/class-endtrack-grafana.php';
-        $dashboard_url = ENDTrack_Grafana::create_dashboard($launch_title, $safe_launch_name);
+        $dashboard_url = ENDTrack_Grafana::create_dashboard($launch_title, $safe_launch_name, $launch_type);
 
         $msg = 'dashboard_created';
 
@@ -441,11 +412,36 @@ class ENDTrack_Admin
             $dashboards = get_option('endtrack_launch_dashboards', array());
             $dashboards[$safe_launch_name] = $dashboard_url;
             update_option('endtrack_launch_dashboards', $dashboards);
-        } else {
-            $msg = 'grafana_error';
+        }
+        else {
+            $msg = 'grafana_error&details=' . urlencode($dashboard_url->get_error_message());
         }
 
         wp_redirect(admin_url('admin.php?page=endtrack&message=' . $msg));
+        exit;
+    }
+
+    public function handle_delete_grafana()
+    {
+        if (!current_user_can('manage_options')) {
+            wp_die('No tienes permisos.');
+        }
+
+        check_admin_referer('endtrack_delete_grafana_action', 'endtrack_delete_grafana_nonce');
+
+        $launch_name = isset($_GET['launch']) ? sanitize_text_field(urldecode($_GET['launch'])) : '';
+
+        if (empty($launch_name)) {
+            wp_die('Falta el nombre del lanzamiento.');
+        }
+
+        $dashboards = get_option('endtrack_launch_dashboards', array());
+        if (isset($dashboards[$launch_name])) {
+            unset($dashboards[$launch_name]);
+            update_option('endtrack_launch_dashboards', $dashboards);
+        }
+
+        wp_redirect(admin_url('admin.php?page=endtrack&message=dashboard_deleted'));
         exit;
     }
 
@@ -493,7 +489,8 @@ class ENDTrack_Admin
             if (!is_wp_error($dashboard_url)) {
                 $dashboards[$safe_launch_name] = $dashboard_url;
                 $success_count++;
-            } else {
+            }
+            else {
                 $error_count++;
             }
         }
@@ -506,6 +503,19 @@ class ENDTrack_Admin
         }
 
         wp_redirect(admin_url('admin.php?page=endtrack&message=' . $msg . '&success=' . $success_count . '&errors=' . $error_count));
+        exit;
+    }
+
+    public function handle_flush_rewrites()
+    {
+        if (!current_user_can('manage_options')) {
+            wp_die('No tienes permiso.');
+        }
+        check_admin_referer('endtrack_flush_rewrites_action', 'endtrack_flush_rewrites_nonce');
+
+        flush_rewrite_rules();
+
+        wp_redirect(admin_url('admin.php?page=endtrack&message=rewrites_flushed'));
         exit;
     }
 
@@ -526,12 +536,20 @@ class ENDTrack_Admin
                 // Allow HTML for rich text fields, sanitize others strictly
                 if (in_array($key, ['content_creatividades', 'content_asignacion', 'content_billing_methods']) || strpos($key, 'content_creatividades_') === 0 || strpos($key, 'content_billing_methods_') === 0) {
                     $sanitized_texts[$key] = wp_kses_post($value);
-                } else {
+                }
+                else {
                     $sanitized_texts[$key] = sanitize_text_field($value);
                 }
             }
 
-            update_option('endtrack_texts', $sanitized_texts);
+            // Fusionar con lo ya guardado, no reemplazar: este mismo option
+            // 'endtrack_texts' también guarda ajustes de la pestaña
+            // "Integraciones" (ext_db_*, anthropic_key, grafana_*) y
+            // update_option() a pelo aquí los borraba en cada guardado de
+            // Textos (bug detectado 2026-08-11: las credenciales de la BBDD
+            // externa de ventas desaparecían sin motivo aparente).
+            $texts_existentes = get_option('endtrack_texts', array());
+            update_option('endtrack_texts', array_merge($texts_existentes, $sanitized_texts));
         }
 
         // Redirect back
@@ -550,9 +568,15 @@ class ENDTrack_Admin
         // Get existing texts option
         $texts = get_option('endtrack_texts', array());
 
-        // Save OpenAI API Key
-        if (isset($_POST['openai_key'])) {
-            $texts['openai_key'] = sanitize_text_field($_POST['openai_key']);
+        // Save Anthropic (Claude) API Key
+        if (isset($_POST['anthropic_key'])) {
+            $texts['anthropic_key'] = sanitize_text_field($_POST['anthropic_key']);
+        }
+
+        // Save Claude model
+        $allowed_models = array('claude-haiku-4-5-20251001', 'claude-sonnet-4-5-20250514', 'claude-sonnet-4-20250514');
+        if (isset($_POST['claude_model']) && in_array($_POST['claude_model'], $allowed_models)) {
+            $texts['claude_model'] = sanitize_text_field($_POST['claude_model']);
         }
 
         // Save Grafana settings
@@ -568,6 +592,29 @@ class ENDTrack_Admin
             $texts['grafana_datasource_uid'] = sanitize_text_field($_POST['grafana_datasource_uid']);
         }
 
+        // BBDD externa de ventas (pdc_pagos): host / nombre / usuario / contraseña.
+        // Si un campo de contraseña llega vacío, se conserva el valor anterior
+        // (para no borrarla sin querer al guardar el resto).
+        foreach (array('ext_db_host', 'ext_db_name', 'ext_db_user') as $k) {
+            if (isset($_POST[$k])) {
+                $texts[$k] = sanitize_text_field($_POST[$k]);
+            }
+        }
+        if (isset($_POST['ext_db_pass']) && $_POST['ext_db_pass'] !== '') {
+            $texts['ext_db_pass'] = sanitize_text_field($_POST['ext_db_pass']);
+        }
+
+        // Stripe global: una o varias Secret Keys (una por línea). La leen
+        // endtrack_get_pdc_credentials() y el botón "Verificar con Stripe" de
+        // /ventas-completas/ cuando el lanzamiento no tiene override propio.
+        // Vacío = conservar la actual (igual que la contraseña).
+        if (isset($_POST['stripe_secret_key']) && trim((string) $_POST['stripe_secret_key']) !== '') {
+            $texts['stripe_secret_key'] = sanitize_textarea_field(wp_unslash($_POST['stripe_secret_key']));
+        }
+        if (!empty($_POST['stripe_secret_key_clear'])) {
+            $texts['stripe_secret_key'] = '';
+        }
+
         update_option('endtrack_texts', $texts);
 
         // Redirect back
@@ -575,28 +622,175 @@ class ENDTrack_Admin
         exit;
     }
 
+    /**
+     * Guarda los id_producto (ventas) de un lanzamiento en endtrack_ext_products_{slug}.
+     * Uno por línea. Los leen stats-ventas-fullscreen.php y class-endtrack-adspend.php.
+     */
+    public function handle_save_products()
+    {
+        if (!current_user_can('manage_options')) {
+            wp_die('No tienes permisos.');
+        }
+        check_admin_referer('endtrack_save_products_action', 'endtrack_save_products_nonce');
+
+        $launch = isset($_POST['launch']) ? sanitize_text_field($_POST['launch']) : '';
+        $safe_l = ($launch === 'legacy') ? 'legacy' : preg_replace('/[^a-zA-Z0-9_]/', '', $launch);
+
+        // Solo se reescribe el listado si el formulario lo envía: el panel nuevo
+        // guarda productos y comisión por AJAX y por separado.
+        if (isset($_POST['ext_products'])) {
+            $raw = (string) wp_unslash($_POST['ext_products']);
+            $lines = preg_split('/[\r\n,]+/', $raw);
+            $prods = array();
+            foreach ($lines as $line) {
+                $v = sanitize_text_field(trim($line));
+                if ($v !== '') {
+                    $prods[] = $v;
+                }
+            }
+            $prods = array_values(array_unique($prods));
+
+            update_option('endtrack_ext_products_' . $safe_l, wp_json_encode($prods));
+        }
+
+        // Comisión general del lanzamiento (%). Es la que se muestra en la página
+        // pública de captación y la que se usa como fallback cuando un afiliado no
+        // tiene una comisión propia asignada. Vacío = no fijada.
+        if (isset($_POST['launch_commission'])) {
+            $comm_raw = trim((string) wp_unslash($_POST['launch_commission']));
+            if ($comm_raw === '') {
+                delete_option('endtrack_launch_commission_' . $safe_l);
+            } else {
+                $comm = floatval(str_replace(',', '.', $comm_raw));
+                if ($comm < 0) {
+                    $comm = 0;
+                }
+                if ($comm > 100) {
+                    $comm = 100;
+                }
+                update_option('endtrack_launch_commission_' . $safe_l, $comm);
+            }
+        }
+
+        wp_safe_redirect(wp_get_referer() ?: admin_url('admin.php?page=endtrack'));
+        exit;
+    }
+
+    /**
+     * Guarda el píxel de Meta/Google Ads que un AFILIADO configura para un lanzamiento
+     * desde su panel. Se almacena en la opción endtrack_affiliate_pixels_{safe_launch}
+     * como array( user_id => ['meta'=>, 'gads_id'=>, 'gads_label'=>] ). La inyección en
+     * frontend la hace ENDTrack_Public::tracking_code() eligiendo client-side por ?ref=.
+     */
+    public function handle_save_affiliate_pixels()
+    {
+        if (!is_user_logged_in()) {
+            wp_die('Debes iniciar sesión.');
+        }
+        check_admin_referer('endtrack_save_affiliate_pixels_action', 'endtrack_px_nonce');
+
+        // Por defecto, el afiliado edita SUS propios píxeles. Un admin (impersonando desde
+        // el panel) puede guardar en nombre de otro afiliado vía target_user.
+        $user_id = get_current_user_id();
+        if (isset($_POST['target_user']) && current_user_can('manage_options')) {
+            $tu = intval($_POST['target_user']);
+            if ($tu > 0) {
+                $user_id = $tu;
+            }
+        }
+
+        $launch = isset($_POST['launch']) ? sanitize_text_field(wp_unslash($_POST['launch'])) : '';
+        if ($launch === '') {
+            wp_safe_redirect(wp_get_referer() ?: home_url('/endtrack-panel-afiliado/'));
+            exit;
+        }
+        $safe_l = ($launch === 'legacy') ? 'legacy' : preg_replace('/[^a-zA-Z0-9_]/', '', $launch);
+
+        // Meta Pixel ID: solo dígitos.
+        $meta = isset($_POST['meta_pixel']) ? preg_replace('/[^0-9]/', '', (string) wp_unslash($_POST['meta_pixel'])) : '';
+        // Google Ads (AW-...) o GA4 (G-...): alfanumérico + guiones.
+        $gads_id = isset($_POST['gads_id']) ? strtoupper(preg_replace('/[^A-Za-z0-9\-]/', '', (string) wp_unslash($_POST['gads_id']))) : '';
+        // Etiqueta de conversión: alfanumérico, guion y guion bajo.
+        $gads_label = isset($_POST['gads_label']) ? preg_replace('/[^A-Za-z0-9_\-]/', '', (string) wp_unslash($_POST['gads_label'])) : '';
+
+        $opt_key = 'endtrack_affiliate_pixels_' . $safe_l;
+        $all = get_option($opt_key, array());
+        if (!is_array($all)) {
+            $all = array();
+        }
+        if ($meta === '' && $gads_id === '') {
+            unset($all[$user_id]);
+        } else {
+            $all[$user_id] = array('meta' => $meta, 'gads_id' => $gads_id, 'gads_label' => $gads_label);
+        }
+        update_option($opt_key, $all, false);
+
+        // El píxel se inyecta server-side en el HTML, que WP Rocket cachea. Sin purgar,
+        // el afiliado guardaría pero las páginas cacheadas seguirían sin su píxel. Purgamos
+        // para que el cambio surta efecto de inmediato (autoservicio fiable).
+        if (function_exists('rocket_clean_domain')) {
+            rocket_clean_domain();
+        }
+
+        $redirect = wp_get_referer() ?: home_url('/endtrack-panel-afiliado/');
+        $redirect = add_query_arg(array('tab' => 'pixeles', 'launch' => $launch, 'px_saved' => '1'), $redirect);
+        wp_safe_redirect($redirect);
+        exit;
+    }
+
 
 
     public function ajax_save_commission()
     {
-        if (!current_user_can('manage_options')) {
+        if (!current_user_can('manage_options') && !current_user_can('manage_endtrack_affiliates')) {
             wp_send_json_error('No tienes permisos.');
         }
 
         $user_id = isset($_POST['user_id']) ? intval($_POST['user_id']) : 0;
-        $rate = isset($_POST['rate']) ? floatval($_POST['rate']) : 25.0;
+        $rate = isset($_POST['rate']) ? floatval($_POST['rate']) : 20.0;
+        $launch = isset($_POST['launch']) ? sanitize_text_field($_POST['launch']) : '';
 
         if ($user_id > 0) {
-            update_user_meta($user_id, 'endtrack_commission_rate', $rate);
+            $meta_key = 'endtrack_commission_rate';
+            if (!empty($launch) && $launch !== 'legacy') {
+                $safe = preg_replace('/[^a-zA-Z0-9_]/', '', $launch);
+                $meta_key = 'endtrack_commission_rate_' . $safe;
+            }
+            update_user_meta($user_id, $meta_key, $rate);
             wp_send_json_success('Comisión guardada.');
-        } else {
+        }
+        else {
+            wp_send_json_error('ID de usuario inválido.');
+        }
+    }
+
+    public function ajax_save_upfront()
+    {
+        if (!current_user_can('manage_options') && !current_user_can('manage_endtrack_affiliates')) {
+            wp_send_json_error('No tienes permisos.');
+        }
+
+        $user_id = isset($_POST['user_id']) ? intval($_POST['user_id']) : 0;
+        $amount = isset($_POST['amount']) ? floatval($_POST['amount']) : 0;
+        $launch = isset($_POST['launch']) ? sanitize_text_field($_POST['launch']) : '';
+
+        if ($user_id > 0) {
+            $meta_key = 'endtrack_upfront_payment';
+            if (!empty($launch) && $launch !== 'legacy') {
+                $safe = preg_replace('/[^a-zA-Z0-9_]/', '', $launch);
+                $meta_key = 'endtrack_upfront_payment_' . $safe;
+            }
+            update_user_meta($user_id, $meta_key, $amount);
+            wp_send_json_success('Upfront guardado.');
+        }
+        else {
             wp_send_json_error('ID de usuario inválido.');
         }
     }
 
     public function ajax_toggle_affiliate_link()
     {
-        if (!current_user_can('manage_options')) {
+        if (!current_user_can('manage_options') && !current_user_can('manage_endtrack_affiliates')) {
             wp_send_json_error('No tienes permisos.');
         }
 
@@ -606,14 +800,15 @@ class ENDTrack_Admin
         if ($post_id > 0) {
             update_post_meta($post_id, '_endtrack_is_affiliate_link', $active);
             wp_send_json_success('Estado de enlace actualizado.');
-        } else {
+        }
+        else {
             wp_send_json_error('ID de página inválido.');
         }
     }
 
     public function ajax_add_payment()
     {
-        if (!current_user_can('manage_options')) {
+        if (!current_user_can('manage_options') && !current_user_can('manage_endtrack_affiliates')) {
             wp_send_json_error('No tienes permisos.');
         }
 
@@ -640,14 +835,15 @@ class ENDTrack_Admin
 
         if ($result) {
             wp_send_json_success('Pago registrado correctamente.');
-        } else {
+        }
+        else {
             wp_send_json_error('Error al guardar en la base de datos.');
         }
     }
 
     public function ajax_delete_payment()
     {
-        if (!current_user_can('manage_options')) {
+        if (!current_user_can('manage_options') && !current_user_can('manage_endtrack_affiliates')) {
             wp_send_json_error('No tienes permisos.');
         }
 
@@ -663,14 +859,15 @@ class ENDTrack_Admin
 
         if ($result) {
             wp_send_json_success('Pago eliminado.');
-        } else {
+        }
+        else {
             wp_send_json_error('Error al eliminar el pago.');
         }
     }
 
     public function ajax_delete_affiliate()
     {
-        if (!current_user_can('manage_options')) {
+        if (!current_user_can('manage_options') && !current_user_can('manage_endtrack_affiliates')) {
             wp_send_json_error('No tienes permisos.');
         }
 
@@ -697,7 +894,8 @@ class ENDTrack_Admin
         if ($user) {
             $user->remove_role('afiliado');
             wp_send_json_success('Afiliado eliminado (rol removido).');
-        } else {
+        }
+        else {
             wp_send_json_error('Usuario no encontrado.');
         }
     }
@@ -739,7 +937,8 @@ class ENDTrack_Admin
             if ($cat_id) {
                 $category = get_category($cat_id);
                 $cat_slug = ($category) ? $category->slug : $launch_name;
-            } else {
+            }
+            else {
                 $cat_slug = strtolower(preg_replace('/[^a-zA-Z0-9]/', '-', $launch_name));
             }
             $new_mapping[$launch_name] = $cat_slug;
@@ -753,7 +952,8 @@ class ENDTrack_Admin
                 $has_tipo = $wpdb->get_results("SHOW COLUMNS FROM $table LIKE '$col_tipo'");
                 if (!empty($has_tipo)) {
                     $wpdb->query("ALTER TABLE $table MODIFY COLUMN $col_tipo TINYINT(1) DEFAULT 0");
-                } else {
+                }
+                else {
                     $wpdb->query("ALTER TABLE $table ADD COLUMN $col_tipo TINYINT(1) DEFAULT 0");
                 }
 
@@ -807,5 +1007,38 @@ class ENDTrack_Admin
             }
         }
     }
-}
 
+    private function extract_url_context($url)
+    {
+        $response = wp_remote_get($url, array('timeout' => 10));
+        if (is_wp_error($response))
+            return '';
+
+        $html = wp_remote_retrieve_body($response);
+        if (empty($html))
+            return '';
+
+        // Strip scripts and styles
+        $html = preg_replace('/<script[^>]*>.*?<\/script>/si', '', $html);
+        $html = preg_replace('/<style[^>]*>.*?<\/style>/si', '', $html);
+
+        // Extract headings
+        preg_match_all('/<h[1-6][^>]*>(.*?)<\/h[1-6]>/si', $html, $m);
+        $headings = array_slice(array_map('strip_tags', $m[1] ?? array()), 0, 10);
+        $headings = array_filter(array_map('trim', $headings));
+
+        // Count sections
+        $sections = substr_count(strtolower($html), '<section')
+            + substr_count(strtolower($html), 'elementor-top-section');
+
+        $ctx = '';
+        if (!empty($headings)) {
+            $ctx .= "Títulos encontrados en la página de referencia:\n- " . implode("\n- ", $headings) . "\n";
+        }
+        if ($sections > 0) {
+            $ctx .= "Número aproximado de secciones/bloques: {$sections}\n";
+        }
+
+        return $ctx;
+    }
+}

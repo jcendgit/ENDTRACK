@@ -23,7 +23,8 @@ $texts = get_option('endtrack_texts', array());
 
 // Logo Logic
 $logo_key = $is_admin_panel ? 'logo_admin_panel' : 'logo_user_panel';
-$logo_url = isset($texts[$logo_key]) && !empty($texts[$logo_key]) ? $texts[$logo_key] : '';
+$default_logo = 'https://visualbusiness.school/wp-content/uploads/2026/03/favicon-bss.png';
+$logo_url = isset($texts[$logo_key]) && !empty($texts[$logo_key]) ? $texts[$logo_key] : $default_logo;
 
 global $current_user;
 wp_get_current_user();
@@ -31,7 +32,7 @@ wp_get_current_user();
 // Impersonation Logic
 $is_impersonating = false;
 $impersonated_user = null;
-if (isset($_GET['impersonate']) && current_user_can('manage_options')) {
+if (isset($_GET['impersonate']) && (current_user_can('manage_options') || current_user_can('manage_endtrack_affiliates'))) {
     $impersonate_id = intval($_GET['impersonate']);
     $impersonated_user = get_userdata($impersonate_id);
     if ($impersonated_user) {
@@ -56,19 +57,15 @@ $welcome_subtitle = str_replace($placeholders, $replacements, $welcome_subtitle)
 // Nav Items
 if ($is_admin_panel) {
     $nav_items = [
-        'dashboard' => ['icon' => 'fa-chart-line', 'label' => 'Dashboard'], // Stats Overview
-        // 'registrados' => ['icon' => 'fa-users', 'label' => 'Registrados'], // Merged into Dashboard or separate? Request said "Tabs: Registrados, leads, ventas". 
-        // Let's keep a simple Dashboard structure that loads tabs internally or separate sidebar items.
-        // User request: "En endtrack-panel-admin-afiliado que sean pestañas Registrados, leads, y ventas"
-        // This implies the SIDEBAR might effectively be these Tabs, OR there is one page with internal tabs.
-        // The screenshot shows Sidebar: Dashboard, Reports, Campaigns...
-        // Let's map the user's "Tabs" to Sidebar items for the "Modern Dashboard" look.
+        'dashboard' => ['icon' => 'fa-home', 'label' => 'Inicio'],
+        'estadisticas' => ['icon' => 'fa-chart-pie', 'label' => 'Estadísticas', 'url' => home_url('/endtrack-estadisticas/')],
         'registrados' => ['icon' => 'fa-users', 'label' => 'Registrados'],
         'leads' => ['icon' => 'fa-user-plus', 'label' => 'Leads'],
         'ventas' => ['icon' => 'fa-shopping-cart', 'label' => 'Ventas'],
         'pagos' => ['icon' => 'fa-money-check-alt', 'label' => 'Pagos'],
     ];
-} else {
+}
+else {
     // User Panel
     // "pestañas también: creatividades, asignación... texto que has quitado"
     $txt_links = isset($texts['panel_txt_links']) ? $texts['panel_txt_links'] : 'Enlaces';
@@ -76,6 +73,7 @@ if ($is_admin_panel) {
         'dashboard' => ['icon' => 'fa-home', 'label' => 'Dashboard'],
         'ventas' => ['icon' => 'fa-shopping-cart', 'label' => 'Ventas'],
         'links' => ['icon' => 'fa-link', 'label' => $txt_links],
+        'pixeles' => ['icon' => 'fa-bullseye', 'label' => 'Píxeles'],
         'creatividades' => ['icon' => 'fa-images', 'label' => 'Creatividades'],
         'asignacion' => ['icon' => 'fa-clipboard-list', 'label' => 'Asignación'],
         'pagos' => ['icon' => 'fa-history', 'label' => 'Pagos'],
@@ -87,26 +85,29 @@ $active_tab = isset($_GET['tab']) ? sanitize_text_field($_GET['tab']) : 'dashboa
 
 ?>
 <?php if (!$is_shortcode): ?>
-    <!DOCTYPE html>
-    <html lang="es">
+<!DOCTYPE html>
+<html lang="es">
 
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title><?php wp_title(); ?></title>
-        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-        <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-        <?php wp_head(); ?>
-    <?php endif; ?>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>
+        <?php wp_title(); ?>
+    </title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <?php wp_head(); ?>
+    <?php
+endif; ?>
     <style>
         :root {
             --sidebar-width: 260px;
             --bg-color: #f0f2f5;
             --text-color: #1d1d1f;
             --primary-color:
-                <?php echo $is_admin_panel ? '#4F46E5' : '#000'; ?>
-            ;
+                <?php echo $is_admin_panel ? '#4F46E5' : '#000';
+?>;
             --active-bg: rgba(255, 255, 255, 0.2);
             --color-visits: #0EA5E9;
             --color-leads: #6366F1;
@@ -481,47 +482,54 @@ $active_tab = isset($_GET['tab']) ? sanitize_text_field($_GET['tab']) : 'dashboa
 
 <?php if (!$is_shortcode): ?>
 
-    <body <?php body_class($is_admin_panel ? 'is-admin-dashboard' : ''); ?>>
-        <!-- Abstract Background Blobs -->
-        <div
-            style="position: fixed; top: -10%; left: -10%; width: 40%; height: 40%; background: radial-gradient(circle, rgba(79, 70, 229, 0.1) 0%, transparent 70%); z-index: -1; filter: blur(80px); animation: float 25s infinite alternate;">
-        </div>
-        <div
-            style="position: fixed; bottom: -10%; right: -10%; width: 50%; height: 50%; background: radial-gradient(circle, rgba(16, 185, 129, 0.08) 0%, transparent 70%); z-index: -1; filter: blur(100px); animation: float 30s infinite alternate-reverse;">
-        </div>
-        <div
-            style="position: fixed; top: 40%; right: 10%; width: 30%; height: 30%; background: radial-gradient(circle, rgba(245, 158, 11, 0.05) 0%, transparent 70%); z-index: -1; filter: blur(70px); animation: float 22s infinite alternate;">
-        </div>
-    <?php endif; ?>
+<body <?php body_class($is_admin_panel ? 'is-admin-dashboard' : ''); ?>>
+    <!-- Abstract Background Blobs -->
+    <div
+        style="position: fixed; top: -10%; left: -10%; width: 40%; height: 40%; background: radial-gradient(circle, rgba(79, 70, 229, 0.1) 0%, transparent 70%); z-index: -1; filter: blur(80px); animation: float 25s infinite alternate;">
+    </div>
+    <div
+        style="position: fixed; bottom: -10%; right: -10%; width: 50%; height: 50%; background: radial-gradient(circle, rgba(16, 185, 129, 0.08) 0%, transparent 70%); z-index: -1; filter: blur(100px); animation: float 30s infinite alternate-reverse;">
+    </div>
+    <div
+        style="position: fixed; top: 40%; right: 10%; width: 30%; height: 30%; background: radial-gradient(circle, rgba(245, 158, 11, 0.05) 0%, transparent 70%); z-index: -1; filter: blur(70px); animation: float 22s infinite alternate;">
+    </div>
+    <?php
+endif; ?>
 
     <div class="dashboard-sidebar">
         <div class="branding">
             <?php if ($logo_url): ?>
-                <img src="<?php echo esc_url($logo_url); ?>" alt="Logo">
-            <?php else: ?>
-                <h3>ENDTrack</h3>
-            <?php endif; ?>
+            <img src="<?php echo esc_url($logo_url); ?>" alt="Logo">
+            <?php
+else: ?>
+            <h3>ENDTrack</h3>
+            <?php
+endif; ?>
 
             <?php if ($is_admin_panel): ?>
-                <div
-                    style="background: #4F46E5; color: white; padding: 4px 10px; border-radius: 6px; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; display: inline-block; margin-top: 10px;">
-                    <i class="fas fa-shield-alt" style="margin-right: 4px;"></i> Modo Administrador
-                </div>
-            <?php endif; ?>
+            <div
+                style="background: #4F46E5; color: white; padding: 4px 10px; border-radius: 6px; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; display: inline-block; margin-top: 10px;">
+                <i class="fas fa-shield-alt" style="margin-right: 4px;"></i> Modo Administrador
+            </div>
+            <?php
+endif; ?>
         </div>
 
         <ul class="nav-menu">
             <?php foreach ($nav_items as $key => $item):
-                $active_class = ($active_tab == $key) ? 'active' : '';
-                $url = add_query_arg('tab', $key);
-                ?>
-                <li class="nav-item">
-                    <a href="<?php echo esc_url($url); ?>" class="nav-link <?php echo $active_class; ?>">
-                        <i class="fas <?php echo $item['icon']; ?>"></i>
-                        <?php echo esc_html($item['label']); ?>
-                    </a>
-                </li>
-            <?php endforeach; ?>
+    $active_class = ($active_tab == $key) ? 'active' : '';
+    $url = add_query_arg('tab', $key);
+?>
+            <li class="nav-item">
+                <a href="<?php echo isset($item['url']) ? esc_url($item['url']) : esc_url($url); ?>"
+                    class="nav-link <?php echo $active_class; ?>" <?php echo isset($item['url']) ? 'target="_blank"'
+        : ''; ?>>
+                    <i class="fas <?php echo $item['icon']; ?>"></i>
+                    <?php echo esc_html($item['label']); ?>
+                </a>
+            </li>
+            <?php
+endforeach; ?>
         </ul>
 
         <div class="sidebar-footer">
@@ -532,7 +540,7 @@ $active_tab = isset($_GET['tab']) ? sanitize_text_field($_GET['tab']) : 'dashboa
                     </a>
                 </li>
                 <li class="nav-item">
-                    <a href="<?php echo home_url('/contacto/'); ?>" class="nav-link">
+                    <a href="mailto:colabora@pablogiltrader.com" class="nav-link">
                         <i class="fas fa-headset"></i> Soporte
                     </a>
                 </li>
@@ -542,24 +550,28 @@ $active_tab = isset($_GET['tab']) ? sanitize_text_field($_GET['tab']) : 'dashboa
 
     <div class="dashboard-main">
         <?php if ($is_impersonating): ?>
-            <div
-                style="background: #fff3cd; color: #856404; padding: 15px; text-align: center; border-radius: 12px; border: 1px solid #ffeeba; margin-bottom: 25px; display: flex; align-items: center; justify-content: center; gap: 15px; flex-wrap: wrap;">
-                <div>
-                    <i class="fas fa-exclamation-triangle" style="margin-right: 10px;"></i>
-                    Estás viendo al usuario <strong><?php echo esc_html($display_user->display_name); ?></strong> desde
-                    administrador.
-                </div>
-                <a href="/endtrack-panel-admin-afiliado"
-                    style="background: #856404; color: #fff; padding: 8px 20px; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 14px; transition: opacity 0.2s;">
-                    Volver al panel general
-                </a>
+        <div
+            style="background: #fff3cd; color: #856404; padding: 15px; text-align: center; border-radius: 12px; border: 1px solid #ffeeba; margin-bottom: 25px; display: flex; align-items: center; justify-content: center; gap: 15px; flex-wrap: wrap;">
+            <div>
+                <i class="fas fa-exclamation-triangle" style="margin-right: 10px;"></i>
+                Estás viendo al usuario <strong>
+                    <?php echo esc_html($display_user->display_name); ?>
+                </strong> desde
+                administrador.
             </div>
-        <?php endif; ?>
+            <a href="/endtrack-panel-admin-afiliado"
+                style="background: #856404; color: #fff; padding: 8px 20px; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 14px; transition: opacity 0.2s;">
+                Volver al panel general
+            </a>
+        </div>
+        <?php
+endif; ?>
         <?php if ($is_admin_panel): ?>
-            <div
-                style="height: 4px; background: #4F46E5; position: fixed; top: 0; left: var(--sidebar-width); right: 0; z-index: 100;">
-            </div>
-        <?php endif; ?>
+        <div
+            style="height: 4px; background: #4F46E5; position: fixed; top: 0; left: var(--sidebar-width); right: 0; z-index: 100;">
+        </div>
+        <?php
+endif; ?>
 
         <div class="mobile-toggle" onclick="document.querySelector('.dashboard-sidebar').classList.toggle('open')">
             <i class="fas fa-bars"></i>
@@ -568,66 +580,84 @@ $active_tab = isset($_GET['tab']) ? sanitize_text_field($_GET['tab']) : 'dashboa
         <!-- Top Header with Title and Launch Selector -->
         <div class="dashboard-header"
             style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
-            <h1 class="page-title" style="margin:0;"><?php echo esc_html($nav_items[$active_tab]['label']); ?></h1>
-            <?php /* Launch switcher logic continues below */ ?>
+            <h1 class="page-title" style="margin:0;">
+                <?php echo esc_html($nav_items[$active_tab]['label']); ?>
+            </h1>
+            <?php /* Launch switcher logic continues below */?>
 
             <!-- Global Launch Selector -->
             <?php
-            $launches = get_option('endtrack_launches', array());
-            // Filter launches by visibility - only show visible ones in dropdown
-            $visibility_map = get_option('endtrack_launch_visibility', array());
-            $launches = array_filter($launches, function ($launch) use ($visibility_map) {
-                return isset($visibility_map[$launch]) && $visibility_map[$launch] === true;
-            });
-            $launches = array_values($launches);
-            $active_launch = isset($_GET['launch']) ? sanitize_text_field($_GET['launch']) : (!empty($launches) ? $launches[0] : '');
+$launches = get_option('endtrack_launches', array());
+$launches = array_values($launches);
+if ($is_admin_panel) {
+    $default_launch = !empty($launches) ? end($launches) : '';
+} else {
+    $user_panel_default = get_option('endtrack_user_panel_default_launch', '');
+    if (!empty($user_panel_default) && in_array($user_panel_default, $launches)) {
+        $default_launch = $user_panel_default;
+    } else {
+        $default_launch = !empty($launches) ? end($launches) : '';
+    }
+}
+$active_launch = isset($_GET['launch']) ? sanitize_text_field($_GET['launch']) : $default_launch;
 
-            if (!empty($launches)):
-                ?>
-                <div class="launch-switcher">
-                    <form method="GET" style="margin:0; display:flex; align-items:center;">
-                        <!-- Keep current page params -->
-                        <?php foreach ($_GET as $key => $val):
-                            if ($key == 'launch')
-                                continue; ?>
-                            <input type="hidden" name="<?php echo esc_attr($key); ?>" value="<?php echo esc_attr($val); ?>">
-                        <?php endforeach; ?>
+// Lanzamiento especial "Evento" (eventos.pablogiltrader.com): se añade al selector
+// por código (no vive en endtrack_launches) y nunca es el lanzamiento por defecto.
+if (function_exists('endtrack_eventos_launch_id') && !in_array(endtrack_eventos_launch_id(), $launches, true)) {
+    $launches[] = endtrack_eventos_launch_id();
+}
 
-                        <label for="launch_select">
-                            <i class="fas fa-rocket"></i> LANZAMIENTO:
-                        </label>
-                        <select name="launch" id="launch_select" onchange="this.form.submit()">
-                            <option value="legacy" <?php selected($active_launch, 'legacy'); ?>>
-                                Lanzamientos Anteriores
-                            </option>
-                            <?php foreach ($launches as $launch): ?>
-                                <option value="<?php echo esc_attr($launch); ?>" <?php selected($active_launch, $launch); ?>>
-                                    <?php echo ucfirst($launch); ?>
-                                </option>
-                            <?php endforeach; ?>
-                        </select>
-                    </form>
-                </div>
-            <?php endif; ?>
+if (!empty($launches)):
+?>
+            <div class="launch-switcher">
+                <form method="GET" style="margin:0; display:flex; align-items:center;">
+                    <!-- Keep current page params -->
+                    <?php foreach ($_GET as $key => $val):
+        if ($key == 'launch')
+            continue; ?>
+                    <input type="hidden" name="<?php echo esc_attr($key); ?>" value="<?php echo esc_attr($val); ?>">
+                    <?php
+    endforeach; ?>
+
+                    <label for="launch_select">
+                        <i class="fas fa-rocket"></i> LANZAMIENTO:
+                    </label>
+                    <select name="launch" id="launch_select" onchange="this.form.submit()">
+                        <?php foreach (array_reverse($launches) as $launch): ?>
+                        <option value="<?php echo esc_attr($launch); ?>" <?php selected($active_launch, $launch); ?>>
+                            <?php echo ucfirst($launch); ?>
+                        </option>
+                        <?php
+    endforeach; ?>
+                    </select>
+                </form>
+            </div>
+            <?php
+endif; ?>
         </div>
 
         <!-- Welcome Message Section -->
         <div class="welcome-section">
-            <h2 style="margin:0; color: #000; font-size: 20px;"><?php echo esc_html($welcome_title); ?></h2>
-            <p style="margin: 5px 0 0; color: #666; font-size: 14px;"><?php echo esc_html($welcome_subtitle); ?></p>
+            <h2 style="margin:0; color: #000; font-size: 20px;">
+                <?php echo esc_html($welcome_title); ?>
+            </h2>
+            <p style="margin: 5px 0 0; color: #666; font-size: 14px;">
+                <?php echo esc_html($welcome_subtitle); ?>
+            </p>
         </div>
 
         <div class="dashboard-content">
             <?php
-            // Pass $active_launch to views logic
-            set_query_var('current_launch', $active_launch); // Helper for templates if needed, or they use $_GET
-            
-            if ($is_admin_panel) {
-                include ENDTRACK_PLUGIN_DIR . 'templates/views/admin-panel-content.php';
-            } else {
-                include ENDTRACK_PLUGIN_DIR . 'templates/views/user-panel-content.php';
-            }
-            ?>
+// Pass $active_launch to views logic
+set_query_var('current_launch', $active_launch); // Helper for templates if needed, or they use $_GET
+
+if ($is_admin_panel) {
+    include ENDTRACK_PLUGIN_DIR . 'templates/views/admin-panel-content.php';
+}
+else {
+    include ENDTRACK_PLUGIN_DIR . 'templates/views/user-panel-content.php';
+}
+?>
         </div>
     </div>
 

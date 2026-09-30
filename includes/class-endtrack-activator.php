@@ -55,6 +55,8 @@ class ENDTrack_Activator
 			ref_s varchar(255) DEFAULT NULL,
 			ref_m varchar(255) DEFAULT NULL,
 			ref_c varchar(255) DEFAULT NULL,
+			ref_t varchar(500) DEFAULT NULL,
+			ref_co varchar(500) DEFAULT NULL,
 			PRIMARY KEY (id)
 		) $charset_collate;";
 		dbDelta($sql_visitas);
