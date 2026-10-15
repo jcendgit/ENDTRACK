@@ -127,6 +127,68 @@ if (!function_exists('endtrack_is_eventos_launch')) {
         return $safe === endtrack_eventos_launch_id();
     }
 }
+/**
+ * Visibilidad de lanzamientos en el PANEL DEL AFILIADO (/endtrack-panel-afiliado/).
+ *
+ * El interruptor "Visible" de cada lanzamiento (admin de ENDTRACK) se guardaba en
+ * endtrack_launch_visibility pero el panel del afiliado no lo leía: mostraba siempre
+ * todos. Regla: un lanzamiento se ve si su interruptor está activado (igual que lo
+ * pinta el admin: sin valor guardado = desactivado). El "Evento" no tiene interruptor,
+ * así que se ve salvo que alguien lo guarde explícitamente como oculto.
+ * Se aplica también al impersonar (?impersonate=), para ver lo mismo que el afiliado.
+ */
+if (!function_exists('endtrack_launch_visible_afiliado')) {
+    function endtrack_launch_visible_afiliado($launch)
+    {
+        $mapa = get_option('endtrack_launch_visibility', array());
+        $mapa = is_array($mapa) ? $mapa : array();
+        if (function_exists('endtrack_is_eventos_launch') && endtrack_is_eventos_launch($launch)) {
+            return !(isset($mapa[$launch]) && !$mapa[$launch]);
+        }
+        return !empty($mapa[$launch]);
+    }
+}
+
+/**
+ * Lanzamientos visibles para el afiliado y el que debe abrirse.
+ * Activo: el pedido por ?launch= si es visible; si no, el lanzamiento por defecto del
+ * panel si es visible; si no, el último visible que no sea el Evento (el Evento nunca
+ * es el de por defecto, salvo que sea el único visible).
+ */
+if (!function_exists('endtrack_afiliado_lanzamientos')) {
+    function endtrack_afiliado_lanzamientos($pedido = '')
+    {
+        $todos = array_values((array) get_option('endtrack_launches', array()));
+        if (function_exists('endtrack_eventos_launch_id') && !in_array(endtrack_eventos_launch_id(), $todos, true)) {
+            $todos[] = endtrack_eventos_launch_id();
+        }
+        $visibles = array_values(array_filter($todos, 'endtrack_launch_visible_afiliado'));
+
+        $activo = '';
+        if ($pedido !== '' && in_array($pedido, $visibles, true)) {
+            $activo = $pedido;
+        }
+        if ($activo === '') {
+            $por_defecto = (string) get_option('endtrack_user_panel_default_launch', '');
+            if ($por_defecto !== '' && in_array($por_defecto, $visibles, true)) {
+                $activo = $por_defecto;
+            }
+        }
+        if ($activo === '') {
+            foreach (array_reverse($visibles) as $l) {
+                if (!(function_exists('endtrack_is_eventos_launch') && endtrack_is_eventos_launch($l))) {
+                    $activo = $l;
+                    break;
+                }
+            }
+            if ($activo === '' && $visibles) {
+                $activo = end($visibles);
+            }
+        }
+        return array('visibles' => $visibles, 'activo' => $activo);
+    }
+}
+
 if (!function_exists('endtrack_eventos_pdo')) {
     function endtrack_eventos_pdo()
     {

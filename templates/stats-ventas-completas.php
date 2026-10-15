@@ -75,6 +75,7 @@ if (empty($launch_products)) {
     $launch_products = json_decode(get_option('endtrack_ext_products_' . $safe_launch, '[]'), true);
     if (!is_array($launch_products)) $launch_products = [];
 }
+$_prod_names = array(); // ID_producto => nombre en el campus (pdc_productos), para el filtro "Producto"
 
 $ext_error = null;
 
@@ -95,6 +96,7 @@ if (isset($_GET['refresh'])) {
     delete_transient($vc_cache_ns . '_tipo');
     delete_transient($vc_cache_ns . '_attr');
     delete_transient($vc_cache_ns . '_etiq');
+    if (function_exists('endtrack_pdc_product_names_key')) delete_transient(endtrack_pdc_product_names_key($launch_products));
     if (!headers_sent()) {
         wp_safe_redirect(remove_query_arg('refresh'));
         exit;
@@ -122,6 +124,10 @@ if (!empty($launch_products) && !empty($ext_host) && !empty($ext_user_db)) {
         $st_sig->execute($params_sig);
         $_sigrow = $st_sig->fetch(PDO::FETCH_ASSOC);
         $vc_sig = $_sigrow ? ($_sigrow['c'] . '|' . $_sigrow['mf']) : '';
+
+        if (function_exists('endtrack_pdc_product_names')) {
+            $_prod_names = endtrack_pdc_product_names($pdo_det, $launch_products);
+        }
 
         $_vc_rows_cache = get_transient($vc_cache_ns . '_rows');
         if (is_array($_vc_rows_cache) && $vc_sig !== '' && ($_vc_rows_cache['sig'] ?? null) === $vc_sig && isset($_vc_rows_cache['rows'])) {
@@ -439,6 +445,7 @@ $logo_url = !empty($_et_texts['logo_admin_panel']) ? $_et_texts['logo_admin_pane
                 'has_reembolso_real' => false,
                 'pdc_usuario_id' => null,
                 'cats' => array(),
+                'prods' => array(),
             );
         }
         $_users_idx[$em][] = $r;
@@ -451,6 +458,7 @@ $logo_url = !empty($_et_texts['logo_admin_panel']) ? $_et_texts['logo_admin_pane
         if ($_pid_cat !== '' && isset($_prod_cat_map[$_pid_cat])) {
             $m['cats'][$_prod_cat_map[$_pid_cat]] = true;
         }
+        if ($_pid_cat !== '') $m['prods'][$_pid_cat] = true;
         if (in_array($est, array('Completado','Compra'), true)) {
             $m['importe_total'] += (float) ($r['importe'] ?? 0);
             $m['cuotas_pagadas']++;
@@ -1212,7 +1220,8 @@ $logo_url = !empty($_et_texts['logo_admin_panel']) ? $_et_texts['logo_admin_pane
                     $_lplbl = isset($_lp_chip_sty[$_lpcat]) ? $_lp_chip_sty[$_lpcat][0] : 'Sin grupo';
                     $_lpcol = isset($_lp_chip_sty[$_lpcat]) ? $_lp_chip_sty[$_lpcat][1] : '#64748b';
                     $_lp_extra = ($_lp_total > $_lp_limit && $_lp_i > $_lp_limit);
-                    echo '<span class="' . ($_lp_extra ? 'vc-lp-extra' : '') . '" style="' . ($_lp_extra ? 'display:none; ' : 'display:inline-block; ') . 'background:' . $_lpcol . '22; border:1px solid ' . $_lpcol . '; color:' . $_lpcol . '; padding:2px 8px; border-radius:99px; font-size:10px; font-weight:600; font-family:monospace;" title="' . esc_attr($_lplbl) . '">' . esc_html($_lp) . '</span>';
+                    $_lp_tit = isset($_prod_names[(string) $_lp]) ? $_prod_names[(string) $_lp] . ' · ' . $_lplbl : $_lplbl;
+                    echo '<span class="' . ($_lp_extra ? 'vc-lp-extra' : '') . '" style="' . ($_lp_extra ? 'display:none; ' : 'display:inline-block; ') . 'background:' . $_lpcol . '22; border:1px solid ' . $_lpcol . '; color:' . $_lpcol . '; padding:2px 8px; border-radius:99px; font-size:10px; font-weight:600; font-family:monospace;" title="' . esc_attr($_lp_tit) . '">' . esc_html($_lp) . '</span>';
                 }
                 if ($_lp_total > $_lp_limit) {
                     echo '<button type="button" id="vc-lp-toggle" data-more="' . ($_lp_total - $_lp_limit) . '" style="background:rgba(255,255,255,.06); border:1px dashed rgba(255,255,255,.3); color:#94a3b8; padding:2px 10px; border-radius:99px; font-size:10px; font-weight:700; cursor:pointer; font-family:inherit;">+' . ($_lp_total - $_lp_limit) . ' más…</button>';
@@ -1303,6 +1312,20 @@ $logo_url = !empty($_et_texts['logo_admin_panel']) ? $_et_texts['logo_admin_pane
                     <option value="crosssell">Cross-sell</option>
                 </select>
             </div>
+            <?php if (count($launch_products) > 1):
+                $_prod_labels = function_exists('endtrack_product_option_labels')
+                    ? endtrack_product_option_labels($launch_products, $_prod_names)
+                    : array_combine(array_map('strval', $launch_products), array_map('strval', $launch_products)); ?>
+            <div style="display:flex; flex-direction:column; gap:4px;">
+                <label style="font-size:10px; color:var(--text-muted); text-transform:uppercase; font-weight:700;">Producto</label>
+                <select id="vc-f-prod" title="Compradores con algún pago de este producto (nombre del campus)" style="background:rgba(255,255,255,.05); border:1px solid rgba(255,255,255,.1); color:white; padding:6px 10px; border-radius:6px; font-size:12px; max-width:260px;">
+                    <option value="">Todos</option>
+                    <?php foreach ($launch_products as $_lp): $_lp = (string) $_lp; ?>
+                        <option value="<?php echo esc_attr($_lp); ?>" data-label="<?php echo esc_attr($_prod_labels[$_lp]); ?>" title="<?php echo esc_attr($_lp); ?>"><?php echo esc_html($_prod_labels[$_lp]); ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+            <?php endif; ?>
             <div style="display:flex; flex-direction:column; gap:4px;">
                 <label style="font-size:10px; color:var(--text-muted); text-transform:uppercase; font-weight:700;">Tipo</label>
                 <select id="vc-f-tipopago" style="background:rgba(255,255,255,.05); border:1px solid rgba(255,255,255,.1); color:white; padding:6px 10px; border-radius:6px; font-size:12px;">
@@ -1630,6 +1653,7 @@ $logo_url = !empty($_et_texts['logo_admin_panel']) ? $_et_texts['logo_admin_pane
                         data-utipo="<?php echo esc_attr(isset($_pdc_user_tipo[$email]) ? $_pdc_user_tipo[$email] : ''); ?>"
                         data-acceso="<?php echo isset($_acceso_etiq[$email]) ? $_acceso_etiq[$email] : ''; ?>"
                         data-cats="<?php echo esc_attr(implode(' ', array_keys($m['cats'] ?? array()))); ?>"
+                        data-prods="<?php echo esc_attr(implode('|', array_keys($m['prods'] ?? array()))); ?>"
                         data-tipo="<?php echo esc_attr($m['tipo'] ?? ''); ?>"
                         data-plataforma="<?php echo esc_attr($m['plataforma'] ?? ''); ?>"
                         data-estadopago="<?php echo esc_attr($_est_data); ?>"
@@ -2391,6 +2415,7 @@ $logo_url = !empty($_et_texts['logo_admin_panel']) ? $_et_texts['logo_admin_pane
         const $color = document.getElementById('vc-f-color');
         const $utipo = document.getElementById('vc-f-utipo');
         const $ptipo = document.getElementById('vc-f-ptipo');
+        const $prod = document.getElementById('vc-f-prod'); // solo existe si el lanzamiento tiene >1 producto
         const $tipopago = document.getElementById('vc-f-tipopago');
         const $plataforma = document.getElementById('vc-f-plataforma');
         const $estadopago = document.getElementById('vc-f-estadopago');
@@ -2464,6 +2489,7 @@ $logo_url = !empty($_et_texts['logo_admin_panel']) ? $_et_texts['logo_admin_pane
                     else if (ut !== fU) ok = false;
                 }
                 if (ok && $ptipo && $ptipo.value && (r.dataset.cats || '').split(' ').indexOf($ptipo.value) === -1) ok = false;
+                if (ok && $prod && $prod.value && (r.dataset.prods || '').split('|').indexOf($prod.value) === -1) ok = false;
                 if (ok && fTP && (r.dataset.tipo || '') !== fTP) ok = false;
                 if (ok && fPlat && (r.dataset.plataforma || '') !== fPlat) ok = false;
                 if (ok && fEst && (r.dataset.estadopago || '').split('|').indexOf(fEst) === -1) ok = false;
@@ -2635,7 +2661,16 @@ $logo_url = !empty($_et_texts['logo_admin_panel']) ? $_et_texts['logo_admin_pane
         });
         // Cambiar cualquier filtro vuelve a la página 1
         const onFilterChange = () => { vcPage = 1; apply(); };
-        [$q,$estado,$color,$utipo,$ptipo,$tipopago,$plataforma,$estadopago,$alumnofecha,$cuotas,$imin,$imax].forEach(el => { el.addEventListener('input', onFilterChange); el.addEventListener('change', onFilterChange); });
+        [$q,$estado,$color,$utipo,$ptipo,$prod,$tipopago,$plataforma,$estadopago,$alumnofecha,$cuotas,$imin,$imax].filter(Boolean).forEach(el => { el.addEventListener('input', onFilterChange); el.addEventListener('change', onFilterChange); });
+        // ── Producto: nº de compradores por producto (sin pruebas/ocultadas) y
+        //    preselección desde ?var_producto= (enlace de /endtrack-estadisticas-ventas/) ──
+        if ($prod) {
+            const pn = {};
+            userRows.forEach(r => { const mk = r.dataset.marca || ''; if (mk === 'test' || mk === 'error') return; (r.dataset.prods || '').split('|').filter(Boolean).forEach(p => { pn[p] = (pn[p] || 0) + 1; }); });
+            Array.from($prod.options).forEach(o => { if (o.value) o.textContent = (o.dataset.label || o.value) + ' (' + (pn[o.value] || 0) + ')'; });
+            const qsProd = new URLSearchParams(window.location.search).get('var_producto');
+            if (qsProd && Array.from($prod.options).some(o => o.value === qsProd)) $prod.value = qsProd;
+        }
         // ── Etiquetas PDC: popover + recuento por etiqueta ──
         if ($etiqBtn && $etiqPop) {
             $etiqBtn.addEventListener('click', (e) => { e.stopPropagation(); $etiqPop.style.display = $etiqPop.style.display === 'none' ? 'block' : 'none'; });
@@ -2653,7 +2688,7 @@ $logo_url = !empty($_et_texts['logo_admin_panel']) ? $_et_texts['logo_admin_pane
             document.querySelectorAll('.vc-etiq-n').forEach(el => { el.textContent = cnt[el.dataset.tid] || 0; });
             const sinEl = document.getElementById('vc-etiq-n-sin'); if (sinEl) sinEl.textContent = sinN;
         }
-        $clear.addEventListener('click', () => { $q.value=''; $estado.value=''; $color.value=''; $utipo.value=''; $tipopago.value=''; $plataforma.value=''; $estadopago.value=''; $alumnofecha.value=''; $cuotas.value=''; $imin.value=''; $imax.value=''; etiqCbs.forEach(cb => cb.checked = false); if ($etiqSin) $etiqSin.checked = false; etiqRefreshLabel(); vcPage = 1; apply(); });
+        $clear.addEventListener('click', () => { $q.value=''; $estado.value=''; $color.value=''; $utipo.value=''; if ($ptipo) $ptipo.value=''; if ($prod) $prod.value=''; $tipopago.value=''; $plataforma.value=''; $estadopago.value=''; $alumnofecha.value=''; $cuotas.value=''; $imin.value=''; $imax.value=''; etiqCbs.forEach(cb => cb.checked = false); if ($etiqSin) $etiqSin.checked = false; etiqRefreshLabel(); vcPage = 1; apply(); });
 
         // ── Controles de paginación ──
         function vcScrollTable(){ const s = document.getElementById('sec_detalle_completo'); if (s) s.scrollIntoView({ behavior:'smooth', block:'start' }); }

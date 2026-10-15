@@ -607,6 +607,13 @@ if (function_exists('endtrack_eventos_launch_id') && !in_array(endtrack_eventos_
     $launches[] = endtrack_eventos_launch_id();
 }
 
+// Panel del afiliado: solo los lanzamientos con "Visible" activado en el admin.
+if (!$is_admin_panel && function_exists('endtrack_afiliado_lanzamientos')) {
+    $et_vis = endtrack_afiliado_lanzamientos(isset($_GET['launch']) ? sanitize_text_field($_GET['launch']) : '');
+    $launches = $et_vis['visibles'];
+    $active_launch = $et_vis['activo'];
+}
+
 if (!empty($launches)):
 ?>
             <div class="launch-switcher">

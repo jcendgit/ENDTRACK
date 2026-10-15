@@ -11,7 +11,8 @@
  *   endtrack_ext_products_crosssell_{safe}  -> productos CROSS-SELL
  *
  * Lo usan stats-ventas-completas.php, stats-ventas-fullscreen.php, class-endtrack-ajax.php
- * y el panel admin (tarjetas de lanzamiento).
+ * y el panel admin (tarjetas de lanzamiento). También los nombres de producto del campus
+ * para los filtros por producto (endtrack_pdc_product_names).
  */
 
 if (!defined('ABSPATH')) {
@@ -83,6 +84,71 @@ if (!function_exists('endtrack_product_group_color')) {
             case 'principal': return '#6366f1'; // índigo
             default:          return '#94a3b8';
         }
+    }
+}
+
+if (!function_exists('endtrack_pdc_product_names')) {
+    /**
+     * Nombre en el campus (pdc_productos.nombre) de cada ID_producto, para enseñar
+     * los productos por su nombre y no por el id de Stripe/ThriveCart. Un mismo ID
+     * puede tener varias filas (p. ej. «… (retomar cuotas)»): manda la más antigua.
+     * Cacheado 30 min. Si el campus no responde devuelve [] y quien lo usa cae al ID.
+     * Lo usan los filtros de producto de /endtrack-estadisticas-ventas/ y /ventas-completas/.
+     */
+    function endtrack_pdc_product_names($pdo, $ids)
+    {
+        $ids = array_values(array_unique(array_filter(array_map('strval', (array) $ids), 'strlen')));
+        if (empty($ids)) return array();
+
+        $key    = endtrack_pdc_product_names_key($ids);
+        $cached = get_transient($key);
+        if (is_array($cached)) return $cached;
+        if (!($pdo instanceof PDO)) return array();
+
+        $names = array();
+        try {
+            $ph = implode(',', array_fill(0, count($ids), '?'));
+            $st = $pdo->prepare("SELECT ID_producto, nombre FROM pdc_productos WHERE ID_producto IN ($ph) ORDER BY ID ASC");
+            $st->execute($ids);
+            foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $row) {
+                $id     = (string) $row['ID_producto'];
+                $nombre = trim((string) $row['nombre']);
+                if ($nombre !== '' && !isset($names[$id])) $names[$id] = $nombre;
+            }
+        } catch (Exception $e) {
+            return array();
+        }
+        set_transient($key, $names, 30 * MINUTE_IN_SECONDS);
+        return $names;
+    }
+
+    function endtrack_pdc_product_names_key($ids)
+    {
+        $ids = array_values(array_unique(array_map('strval', (array) $ids)));
+        sort($ids);
+        return 'endtrack_pdc_pnames_' . md5(implode('|', $ids));
+    }
+}
+
+if (!function_exists('endtrack_product_option_labels')) {
+    /**
+     * Texto de cada producto en los selectores: su nombre del campus. Si no lo tiene,
+     * el ID; si dos productos comparten nombre, se añade el ID para distinguirlos.
+     */
+    function endtrack_product_option_labels($ids, $names)
+    {
+        $repes = array();
+        foreach ((array) $ids as $id) {
+            $n = isset($names[(string) $id]) ? $names[(string) $id] : '';
+            if ($n !== '') $repes[$n] = isset($repes[$n]) ? $repes[$n] + 1 : 1;
+        }
+        $labels = array();
+        foreach ((array) $ids as $id) {
+            $id = (string) $id;
+            $n  = isset($names[$id]) ? $names[$id] : '';
+            $labels[$id] = ($n === '') ? $id : ($repes[$n] > 1 ? $n . ' · ' . $id : $n);
+        }
+        return $labels;
     }
 }
 

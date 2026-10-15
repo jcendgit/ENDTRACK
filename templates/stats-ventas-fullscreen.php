@@ -97,6 +97,17 @@ $launch_products = json_decode(get_option($opt_key, '[]'), true);
 if (!is_array($launch_products))
     $launch_products = [];
 
+// Filtro por producto del lanzamiento (?var_producto=<ID_producto>). Solo vale un ID
+// de la lista del lanzamiento. Ventas, reembolsos e ingresos se limitan a ese producto;
+// los registrados (wp_datos) no dependen del producto y no cambian.
+$all_launch_products = array_values(array_map('strval', $launch_products));
+$launch_product_names = []; // ID_producto => nombre en el campus (se rellena con la conexión PDC)
+$filter_producto = isset($_GET['var_producto']) ? trim((string) wp_unslash($_GET['var_producto'])) : '';
+if ($filter_producto !== '' && !in_array($filter_producto, $all_launch_products, true))
+    $filter_producto = '';
+if ($filter_producto !== '')
+    $launch_products = [$filter_producto];
+
 // ============================================================
 // 3b. NORMALIZACIÓN DE PAÍS
 //   Los países llegan mezclados: nombres en inglés desde wp_datos (ip.guide:
@@ -238,6 +249,9 @@ if ($use_ext_db) {
             $ext_pass,
             [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_TIMEOUT => 10]
         );
+
+        if (function_exists('endtrack_pdc_product_names'))
+            $launch_product_names = endtrack_pdc_product_names($pdo, $all_launch_products);
 
         $ph_prods = implode(',', array_fill(0, count($launch_products), '?'));
         $params = array_merge($launch_products, [$filter_date_start, $filter_date_end]);
@@ -1531,7 +1545,7 @@ $endtrack_nonce = wp_create_nonce('endtrack_load_section');
                 <h1>Estadísticas Ventas <span class="badge-ventas">Conversiones</span></h1>
             </div>
             <div class="header-actions">
-                <a href="/ventas-completas/?launch=<?php echo urlencode($active_launch); ?>&d_start=<?php echo urlencode($filter_date_start); ?>&d_end=<?php echo urlencode($filter_date_end); ?>" class="btn-nav btn-completas" title="Listado completo de compradores: estado de pago, usuario PDC, etiquetas, notas y Stripe">
+                <a href="/ventas-completas/?launch=<?php echo urlencode($active_launch); ?>&d_start=<?php echo urlencode($filter_date_start); ?>&d_end=<?php echo urlencode($filter_date_end); ?><?php echo $filter_producto !== '' ? '&var_producto=' . urlencode($filter_producto) : ''; ?>" class="btn-nav btn-completas" title="Listado completo de compradores: estado de pago, usuario PDC, etiquetas, notas y Stripe">
                     <i class="fas fa-table"></i> Ventas completas
                 </a>
                 <a href="/endtrack-estadisticas/?launch=<?php echo urlencode($active_launch); ?>" class="btn-nav">
@@ -1607,6 +1621,21 @@ $endtrack_nonce = wp_create_nonce('endtrack_load_section');
                 </select>
             </div>
 
+            <?php if (count($all_launch_products) > 1):
+                $_prod_labels = function_exists('endtrack_product_option_labels')
+                    ? endtrack_product_option_labels($all_launch_products, $launch_product_names)
+                    : array_combine($all_launch_products, $all_launch_products); ?>
+            <div class="filter-group">
+                <label>Producto</label>
+                <select name="var_producto" style="max-width:280px;" title="Productos del lanzamiento, con el nombre que tienen en el campus">
+                    <option value="">Todos (<?php echo count($all_launch_products); ?>)</option>
+                    <?php foreach ($all_launch_products as $_pid): ?>
+                        <option value="<?php echo esc_attr($_pid); ?>" title="<?php echo esc_attr($_pid); ?>" <?php selected($filter_producto, $_pid); ?>><?php echo esc_html($_prod_labels[$_pid]); ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+            <?php endif; ?>
+
             <div class="filter-group" style="min-width:120px;">
                 <label>Desde</label>
                 <input type="date" name="d_start" value="<?php echo esc_attr($filter_date_start); ?>">
@@ -1617,7 +1646,7 @@ $endtrack_nonce = wp_create_nonce('endtrack_load_section');
             </div>
 
             <button type="submit" class="btn-filter">Aplicar Filtros</button>
-            <?php if ($filter_source || $filter_medium || $filter_campaign || $filter_afiliado): ?>
+            <?php if ($filter_source || $filter_medium || $filter_campaign || $filter_afiliado || $filter_producto !== ''): ?>
                                                                                                                                                                             <a href="?launch=<?php echo urlencode($active_launch); ?>" class="btn-filter" style="background:rgba(255,255,255,0.1);box-shadow:none;text-decoration:none;text-align:center;">Limpiar</a>
             <?php endif; ?>
         </form>
@@ -1625,6 +1654,14 @@ $endtrack_nonce = wp_create_nonce('endtrack_load_section');
 
     <?php if ($ext_error): ?>
                                                                                                                                                                     <div class="ext-error-banner"><strong>Aviso:</strong> Error conectando a DB externa — solo se muestran registrados.<br><code><?php echo esc_html($ext_error); ?></code></div>
+    <?php endif; ?>
+
+    <?php if ($filter_producto !== ''):
+        $_fp_nombre = isset($launch_product_names[$filter_producto]) ? $launch_product_names[$filter_producto] : $filter_producto; ?>
+    <div style="background:rgba(99,102,241,.12); border:1px solid rgba(99,102,241,.45); color:#c7d2fe; padding:12px 16px; border-radius:10px; margin-bottom:20px; font-size:13px; line-height:1.5;">
+        <i class="fas fa-box"></i> Filtrando por producto: <strong style="color:#fff;"><?php echo esc_html($_fp_nombre); ?></strong> <code style="color:#a5b4fc;"><?php echo esc_html($filter_producto); ?></code>.
+        Ventas, reembolsos e ingresos son solo de este producto. Los registrados son los de todo el lanzamiento (no dependen del producto) y el ROAS sigue con todos los productos.
+    </div>
     <?php endif; ?>
 
     <div class="quick-nav">

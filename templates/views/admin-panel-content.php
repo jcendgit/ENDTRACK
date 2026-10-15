@@ -829,7 +829,7 @@ if ($active_tab == 'ventas') {
 
 // ------ PAGOS TAB ------
 if ($active_tab == 'pagos') {
-    $afiliados      = $wpdb->get_results("SELECT U.ID, U.user_login, U.user_email FROM {$wpdb->users} U INNER JOIN {$wpdb->usermeta} M ON M.user_id = U.ID AND M.meta_key = '{$wpdb->prefix}capabilities' WHERE M.meta_value LIKE '%afiliado%'");
+    $afiliados      = $wpdb->get_results("SELECT U.ID, U.user_login, U.user_email, U.display_name FROM {$wpdb->users} U INNER JOIN {$wpdb->usermeta} M ON M.user_id = U.ID AND M.meta_key = '{$wpdb->prefix}capabilities' WHERE M.meta_value LIKE '%afiliado%'");
     $tabla_payments = $wpdb->prefix . 'endtrack_payments';
     $tabla_datos    = $wpdb->prefix . 'datos';
     $val_days       = 15;
@@ -837,7 +837,14 @@ if ($active_tab == 'pagos') {
     ?>
     <div class="card">
         <h3>Gestión de Pagos a Afiliados</h3>
-        <table style="width:100%; border-collapse:collapse; text-align:left;">
+        <!-- Buscador: filtra la tabla al escribir (nombre, usuario, email o ID), sin recargar -->
+        <div style="display:flex; align-items:center; gap:12px; margin:0 0 16px; flex-wrap:wrap;">
+            <input type="search" id="et_buscar_afiliado" autocomplete="off"
+                placeholder="Buscar afiliado por nombre, usuario o email…"
+                style="flex:1; min-width:240px; max-width:460px; padding:12px 16px; border:1px solid rgba(0,0,0,0.12); border-radius:14px; font-family:inherit; font-size:14px; background:#fff;">
+            <span id="et_buscar_contador" style="color:#888; font-size:13px;"><?php echo count($afiliados); ?> afiliados</span>
+        </div>
+        <table id="et_tabla_pagos" style="width:100%; border-collapse:collapse; text-align:left;">
             <tr style="background:rgba(20,184,166,0.1); color:#14B8A6; font-size:13px; text-transform:uppercase; letter-spacing:0.5px;">
                 <th style="padding:14px;">Afiliado</th>
                 <th style="padding:14px;">Validadas (>15d)</th>
@@ -878,10 +885,14 @@ if ($active_tab == 'pagos') {
 
                 $pending = $total_validated_comm - $upfront - $total_paid;
             ?>
-            <tr style="border-bottom:1px solid rgba(0,0,0,0.05); transition:background 0.2s;"
+            <tr class="et-fila-afiliado" style="border-bottom:1px solid rgba(0,0,0,0.05); transition:background 0.2s;"
+                data-busqueda="<?php echo esc_attr(strtolower($a->ID . ' ' . $a->user_login . ' ' . $a->user_email . ' ' . $a->display_name)); ?>"
                 onmouseover="this.style.background='rgba(0,0,0,0.01)'" onmouseout="this.style.background='transparent'">
                 <td style="padding:14px;">
-                    <span style="font-weight:700; color:#333;"><?php echo esc_html($a->user_login); ?></span><br>
+                    <span style="font-weight:700; color:#333;"><?php echo esc_html($a->user_login); ?></span>
+                    <?php if ($a->display_name !== '' && strcasecmp($a->display_name, $a->user_login) !== 0): ?>
+                    <span style="color:#555; font-size:13px;"> · <?php echo esc_html($a->display_name); ?></span>
+                    <?php endif; ?><br>
                     <span style="color:#888; font-size:12px;"><?php echo esc_html($a->user_email); ?></span>
                 </td>
                 <td style="padding:14px; font-weight:600; color:#555;"><?php echo number_format($total_validated_comm, 2, ',', '.'); ?> €</td>
@@ -896,8 +907,39 @@ if ($active_tab == 'pagos') {
                 </td>
             </tr>
             <?php endforeach; ?>
+            <tr id="et_buscar_vacio" style="display:none;">
+                <td colspan="6" style="padding:24px; text-align:center; color:#888;">Ningún afiliado coincide con la búsqueda.</td>
+            </tr>
         </table>
     </div>
+    <script>
+    (function () {
+        var campo = document.getElementById('et_buscar_afiliado');
+        if (!campo) return;
+        var filas = Array.prototype.slice.call(document.querySelectorAll('#et_tabla_pagos .et-fila-afiliado'));
+        var contador = document.getElementById('et_buscar_contador');
+        var vacio = document.getElementById('et_buscar_vacio');
+        // Sin tildes ni mayúsculas: "jose" encuentra "José".
+        function normalizar(t) {
+            return String(t || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+        }
+        filas.forEach(function (f) { f.setAttribute('data-busqueda', normalizar(f.getAttribute('data-busqueda'))); });
+        function filtrar() {
+            var palabras = normalizar(campo.value).trim().split(/\s+/).filter(Boolean);
+            var visibles = 0;
+            filas.forEach(function (f) {
+                var texto = f.getAttribute('data-busqueda');
+                var ok = palabras.every(function (p) { return texto.indexOf(p) !== -1; });
+                f.style.display = ok ? '' : 'none';
+                if (ok) visibles++;
+            });
+            contador.textContent = palabras.length ? (visibles + ' de ' + filas.length + ' afiliados') : (filas.length + ' afiliados');
+            vacio.style.display = visibles ? 'none' : '';
+        }
+        campo.addEventListener('input', filtrar);
+        campo.focus();
+    })();
+    </script>
 
     <!-- Payment Form Modal -->
     <div id="paymentModal"

@@ -22,6 +22,13 @@ if (!empty($user_panel_default) && in_array($user_panel_default, $launches, true
 }
 $active_launch = isset($_GET['launch']) ? sanitize_text_field($_GET['launch']) : $default_launch;
 
+// Solo lanzamientos con "Visible" activado: si se pide uno oculto (o el de por defecto
+// está oculto), se abre el que corresponde. Misma función que el selector de arriba.
+if (function_exists('endtrack_afiliado_lanzamientos')) {
+    $et_vis = endtrack_afiliado_lanzamientos(isset($_GET['launch']) ? sanitize_text_field($_GET['launch']) : '');
+    $active_launch = $et_vis['activo'];
+}
+
 // Lanzamiento especial "Evento" (eventos.pablogiltrader.com): se añade al selector por
 // código (no vive en endtrack_launches) y nunca es el lanzamiento por defecto.
 if (function_exists('endtrack_eventos_launch_id') && !in_array(endtrack_eventos_launch_id(), $launches, true)) {
