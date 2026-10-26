@@ -188,8 +188,11 @@ class ENDTrack_Ajax
                 // (UTM, content/term, página, afiliado) en vez de descartar el registro bueno.
                 $placement_post = isset($_POST["placement"]) ? sanitize_text_field($_POST["placement"]) : '';
                 $es_oneclick_pulsar = $last_reg->placement === 'correo' && (string) $last_reg->ip === '' && (string) $last_reg->session_id === '';
+                // Alta que pulsar apuntó él mismo (POST /registrar con placement de formulario)
+                // porque este AJAX no llegaba: si llega después, completa esa fila y no duplica.
+                $es_formulario_pulsar = $last_reg->placement === 'formulario_pulsar';
                 $es_venta = isset($_POST["venta"]) && $_POST["venta"] == 2;
-                if ($es_oneclick_pulsar && !$es_venta && $placement_post !== 'correo' && $time_diff >= -60 && $time_diff < 600) {
+                if ((($es_oneclick_pulsar && $time_diff < 600) || ($es_formulario_pulsar && $time_diff < 1800)) && !$es_venta && $placement_post !== 'correo' && $time_diff >= -60) {
                     $fusion = array(
                         "afiliado" => $afiliado_id,
                         "cookie" => $cookie,
@@ -222,7 +225,7 @@ class ENDTrack_Ajax
                     }
                     // primer_reg y primer_reg_<lanzamiento> se conservan: el oneclick ya los calculó.
                     $wpdb->update($tabla_datos, $fusion, array('id' => (int) $last_reg->id));
-                    error_log("ENDTrack AJAX: registro de formulario fusionado con el oneclick de pulsar #{$last_reg->id} ($correo)");
+                    error_log("ENDTrack AJAX: registro de formulario fusionado con la fila de pulsar #{$last_reg->id} ({$last_reg->placement}, $correo)");
                     wp_die('Merged');
                 }
 
