@@ -168,15 +168,65 @@ class ENDTrack_Ajax
                 )
             );
 
-            // Debouncing: check if this EXACT email was registered in the last 15 seconds
-            $last_reg_time = $wpdb->get_var($wpdb->prepare(
-                "SELECT fecha FROM $tabla_datos WHERE correo = %s ORDER BY fecha DESC LIMIT 1",
+            // Debouncing: check if this EXACT email was registered in the last 15 seconds.
+            // `fecha` se guarda en hora de Madrid, así que se compara en hora de Madrid. Antes
+            // se hacía time() - strtotime(fecha), con strtotime en UTC: cualquier registro de
+            // las últimas 1-2 horas daba segundos NEGATIVOS y se descartaba como duplicado
+            // (157 descartes el 25-26/10/2026, todos con diferencia negativa).
+            $last_reg = $wpdb->get_row($wpdb->prepare(
+                "SELECT id, fecha, placement, ip, session_id FROM $tabla_datos WHERE correo = %s ORDER BY fecha DESC LIMIT 1",
                 $correo
             ));
 
-            if ($last_reg_time) {
-                $time_diff = time() - strtotime($last_reg_time);
-                if ($time_diff < 15) {
+            if ($last_reg && $last_reg->fecha && strpos((string) $last_reg->fecha, '0000') !== 0) {
+                $time_diff = time() - (new DateTime($last_reg->fecha, new DateTimeZone('Europe/Madrid')))->getTimestamp();
+
+                // Alta "oneclick" que acaba de apuntar pulsar (POST /pulsar/v1/registrar: placement
+                // 'correo', sin IP ni sesión). Al registrarse por un formulario de pulsar, la etiqueta
+                // del lanzamiento en ActiveCampaign dispara también ese oneclick, que suele llegar
+                // ANTES que este registro: se completa esa fila con la atribución del formulario
+                // (UTM, content/term, página, afiliado) en vez de descartar el registro bueno.
+                $placement_post = isset($_POST["placement"]) ? sanitize_text_field($_POST["placement"]) : '';
+                $es_oneclick_pulsar = $last_reg->placement === 'correo' && (string) $last_reg->ip === '' && (string) $last_reg->session_id === '';
+                $es_venta = isset($_POST["venta"]) && $_POST["venta"] == 2;
+                if ($es_oneclick_pulsar && !$es_venta && $placement_post !== 'correo' && $time_diff >= -60 && $time_diff < 600) {
+                    $fusion = array(
+                        "afiliado" => $afiliado_id,
+                        "cookie" => $cookie,
+                        "term" => isset($_POST["term"]) ? sanitize_text_field($_POST["term"]) : 'No tiene term',
+                        "content" => isset($_POST["content"]) ? sanitize_text_field($_POST["content"]) : 'No tiene content',
+                        "placement" => $placement_post,
+                        "medium" => isset($_POST["medium"]) ? sanitize_text_field($_POST["medium"]) : 'No tiene medio',
+                        "tipo" => isset($_POST["tipo"]) ? sanitize_text_field($_POST["tipo"]) : 'No tiene tipo',
+                        "source" => isset($_POST["source"]) ? sanitize_text_field($_POST["source"]) : 'No tiene fuente',
+                        "campaign" => isset($_POST["campaign"]) ? sanitize_text_field($_POST["campaign"]) : 'No tiene campaña',
+                        "ip" => $ip,
+                        "session_id" => $session_id,
+                        "url_anterior" => isset($_POST["url_anterior"]) ? esc_url_raw($_POST["url_anterior"]) : '',
+                        "url_actual" => isset($_POST["url_actual"]) ? esc_url_raw($_POST["url_actual"]) : '',
+                        "ciudad" => $city,
+                        "pais" => $country_code,
+                    );
+                    if (!empty($_POST["nombre"])) {
+                        $fusion["nombre"] = sanitize_text_field($_POST["nombre"]);
+                    }
+                    if (!empty($_POST["id_pag"])) {
+                        $fusion["id_pag"] = sanitize_text_field($_POST["id_pag"]);
+                    }
+                    if (!empty($launch_context)) {
+                        $col_tc = "tipo_cat_" . preg_replace('/[^a-zA-Z0-9_]/', '', $launch_context);
+                        $cols_datos = $wpdb->get_col("SHOW COLUMNS FROM $tabla_datos", 0);
+                        if (in_array($col_tc, $cols_datos, true)) {
+                            $fusion[$col_tc] = (isset($_POST["tipo_cat"]) && intval($_POST["tipo_cat"]) > 0) ? intval($_POST["tipo_cat"]) : 1;
+                        }
+                    }
+                    // primer_reg y primer_reg_<lanzamiento> se conservan: el oneclick ya los calculó.
+                    $wpdb->update($tabla_datos, $fusion, array('id' => (int) $last_reg->id));
+                    error_log("ENDTrack AJAX: registro de formulario fusionado con el oneclick de pulsar #{$last_reg->id} ($correo)");
+                    wp_die('Merged');
+                }
+
+                if ($time_diff >= -60 && $time_diff < 15) {
                     error_log("ENDTrack AJAX SKIP: Duplicate click detected for $correo (last registration {$time_diff}s ago)");
                     wp_die('Duplicate');
                 }

@@ -13,11 +13,9 @@ $table_visitas = $wpdb->prefix . 'visitas';
 $table_posts = $wpdb->prefix . 'posts';
 
 // Normalización "borja": en cada carga de la página se corrige en BBDD el tráfico
-// organico+borja → afiliado 222 (el medio 'borja' se mantiene).
-// Leads (uBCFl_datos): source='organico' + medium='borja' → source='afiliado', afiliado=222.
-$wpdb->query("UPDATE $table_datos SET source = 'afiliado', afiliado = '222' WHERE LOWER(source) = 'organico' AND LOWER(medium) = 'borja'");
-// Visitas (uBCFl_visitas): ref_s='organico' + ref_m='borja' → ref_s='afiliado', ref=222.
-$wpdb->query("UPDATE $table_visitas SET ref_s = 'afiliado', ref = '222' WHERE LOWER(ref_s) = 'organico' AND LOWER(ref_m) = 'borja'");
+// (oct-2026) Aquí había dos UPDATE que reescribían organico+borja → afiliado 222 en
+// datos y visitas EN CADA CARGA de esta página (recorrían las dos tablas enteras).
+// Ya no quedaba ninguna fila que corregir; se quitaron para no castigar la BBDD.
 
 // === 1. Filters & Context ===
 $endtrack_launches_list = get_option('endtrack_launches', array());
@@ -30,6 +28,7 @@ $filter_medium = isset($_GET['var_medium']) ? sanitize_text_field($_GET['var_med
 $filter_campaign = isset($_GET['var_campaign']) ? sanitize_text_field($_GET['var_campaign']) : '';
 $filter_afiliado = isset($_GET['var_afiliado']) ? sanitize_text_field($_GET['var_afiliado']) : '';
 $filter_page = isset($_GET['var_page']) ? sanitize_text_field($_GET['var_page']) : '';
+$launch_page_ids = array();
 
 // Counting mode: 'sessions' (30-min window, default) or 'unique_ip' (1 visit per IP)
 $count_mode = isset($_GET['count_mode']) ? sanitize_text_field($_GET['count_mode']) : 'unique_ip';
@@ -83,6 +82,8 @@ if ($active_launch) {
                 $ids = implode(',', array_map('intval', $pages_query->posts));
                 $where_v .= " AND id_pag IN ($ids)";
                 $where_d .= " AND id_pag IN ($ids)";
+                // Para el desplegable de "Página": solo las de este lanzamiento.
+                $launch_page_ids = array_map('intval', $pages_query->posts);
             }
         }
     }
@@ -143,7 +144,8 @@ $filter_options = [
     'campaigns' => $wpdb->get_col("SELECT DISTINCT campaign FROM $table_datos WHERE campaign != '' AND campaign IS NOT NULL"),
     'afiliados' => $wpdb->get_col("SELECT DISTINCT afiliado FROM $table_datos WHERE afiliado != '' AND afiliado IS NOT NULL"),
     // Get pages that actually have recorded traffic
-    'pages' => $wpdb->get_results("SELECT DISTINCT p.ID as id, p.post_title as title FROM $table_posts p JOIN $table_visitas v ON v.id_pag = p.ID WHERE p.post_type = 'page' AND p.post_status = 'publish'")
+    // Con un lanzamiento elegido, solo sus páginas (las de su categoría); en "Anteriores", todas las que tengan visitas.
+    'pages' => $wpdb->get_results("SELECT DISTINCT p.ID as id, p.post_title as title FROM $table_posts p JOIN $table_visitas v ON v.id_pag = p.ID WHERE p.post_type = 'page' AND p.post_status = 'publish'" . (!empty($launch_page_ids) ? " AND p.ID IN (" . implode(',', $launch_page_ids) . ")" : "") . " ORDER BY p.post_title")
 ];
 
 /**
