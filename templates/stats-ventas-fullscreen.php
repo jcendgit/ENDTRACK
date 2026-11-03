@@ -18,8 +18,15 @@ $table_datos = $wpdb->prefix . 'datos';
 $endtrack_launches_list = get_option('endtrack_launches', array());
 $default_launch = !empty($endtrack_launches_list) ? end($endtrack_launches_list) : 'legacy';
 $active_launch = isset($_GET['launch']) ? sanitize_text_field($_GET['launch']) : $default_launch;
-$filter_date_start = isset($_GET['d_start']) ? sanitize_text_field($_GET['d_start']) : date('Y-m-d', strtotime('-90 days'));
-$filter_date_end = isset($_GET['d_end']) ? sanitize_text_field($_GET['d_end']) : date('Y-m-d');
+// Fechas del lanzamiento (endtrack_launch_configs[lanz]: desde / hasta / venta_desde). Si la URL no
+// trae fechas, se abre en las del lanzamiento; los que no las tienen siguen con los últimos 90 días.
+$launch_configs = (array) get_option('endtrack_launch_configs', array());
+$launch_window = isset($launch_configs[$active_launch]) && is_array($launch_configs[$active_launch]) ? $launch_configs[$active_launch] : array();
+$filter_date_start = isset($_GET['d_start']) ? sanitize_text_field($_GET['d_start']) : (!empty($launch_window['desde']) ? $launch_window['desde'] : date('Y-m-d', strtotime('-90 days')));
+$filter_date_end = isset($_GET['d_end']) ? sanitize_text_field($_GET['d_end']) : (!empty($launch_window['hasta']) ? $launch_window['hasta'] : date('Y-m-d'));
+// Las ventas del lanzamiento cuentan desde la apertura del carrito: antes, el mismo producto
+// puede venderse en evergreen (Máster 2024: ~145 ventas del producto 48 en mayo, antes del lanzamiento).
+$sales_date_start = (!empty($launch_window['venta_desde']) && $launch_window['venta_desde'] > $filter_date_start) ? $launch_window['venta_desde'] : $filter_date_start;
 $filter_source = isset($_GET['var_source']) ? sanitize_text_field($_GET['var_source']) : '';
 $filter_medium = isset($_GET['var_medium']) ? sanitize_text_field($_GET['var_medium']) : '';
 $filter_campaign = isset($_GET['var_campaign']) ? sanitize_text_field($_GET['var_campaign']) : '';
@@ -254,7 +261,7 @@ if ($use_ext_db) {
             $launch_product_names = endtrack_pdc_product_names($pdo, $all_launch_products);
 
         $ph_prods = implode(',', array_fill(0, count($launch_products), '?'));
-        $params = array_merge($launch_products, [$filter_date_start, $filter_date_end]);
+        $params = array_merge($launch_products, [$sales_date_start, $filter_date_end]);
 
         $stmt = $pdo->prepare("
             SELECT
@@ -1569,16 +1576,34 @@ $endtrack_nonce = wp_create_nonce('endtrack_load_section');
         <form method="GET" class="filters-panel">
             <div class="filter-group">
                 <label>Lanzamiento</label>
-                <select name="launch" onchange="this.form.submit()">
+                <select name="launch" onchange="endtrackCambiaLanzamiento(this)" data-desde="<?php echo esc_attr($launch_window['desde'] ?? ''); ?>" data-hasta="<?php echo esc_attr($launch_window['hasta'] ?? ''); ?>">
                     <option value="legacy" <?php selected($active_launch, 'legacy'); ?>>Anteriores</option>
                     <?php
                     $launches = get_option('endtrack_launches', array());
                     foreach (array_reverse($launches) as $l): ?>
-                        <option value="<?php echo esc_attr($l); ?>" <?php selected($active_launch, $l); ?>>
+                        <option value="<?php echo esc_attr($l); ?>" <?php selected($active_launch, $l); ?> data-desde="<?php echo esc_attr($launch_configs[$l]['desde'] ?? ''); ?>" data-hasta="<?php echo esc_attr($launch_configs[$l]['hasta'] ?? ''); ?>">
                             <?php echo esc_html(ucfirst($l)); ?>
                         </option>
                     <?php endforeach; ?>
                 </select>
+                <script>
+                // Al cambiar de lanzamiento: si tiene fechas, se abre en ellas; si no las tiene y veníamos
+                // con las fechas del anterior sin tocar, se vuelve al rango por defecto (no se arrastran).
+                function endtrackCambiaLanzamiento(sel) {
+                    var f = sel.form, o = sel.options[sel.selectedIndex];
+                    var ini = f.querySelector('[name="d_start"]'), fin = f.querySelector('[name="d_end"]');
+                    if (ini && fin) {
+                        if (o.dataset.desde) {
+                            ini.value = o.dataset.desde;
+                            fin.value = o.dataset.hasta || fin.value;
+                        } else if (sel.dataset.desde && ini.value === sel.dataset.desde && fin.value === sel.dataset.hasta) {
+                            ini.disabled = true;
+                            fin.disabled = true;
+                        }
+                    }
+                    f.submit();
+                }
+                </script>
             </div>
 
             <div class="filter-group">
@@ -1644,6 +1669,11 @@ $endtrack_nonce = wp_create_nonce('endtrack_load_section');
                 <label>Hasta</label>
                 <input type="date" name="d_end" value="<?php echo esc_attr($filter_date_end); ?>">
             </div>
+            <?php if ($sales_date_start !== $filter_date_start): ?>
+            <div class="filter-group" style="min-width:150px; font-size:12px; opacity:.75; align-self:center;" title="Antes de abrir el carrito, el mismo producto puede venderse en evergreen: esas ventas no son del lanzamiento.">
+                Ventas desde la apertura del carrito: <?php echo esc_html(date_i18n('j M Y', strtotime($sales_date_start))); ?>
+            </div>
+            <?php endif; ?>
 
             <button type="submit" class="btn-filter">Aplicar Filtros</button>
             <?php if ($filter_source || $filter_medium || $filter_campaign || $filter_afiliado || $filter_producto !== ''): ?>

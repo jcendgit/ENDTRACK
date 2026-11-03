@@ -21,8 +21,12 @@ $table_posts = $wpdb->prefix . 'posts';
 $endtrack_launches_list = get_option('endtrack_launches', array());
 $default_launch = !empty($endtrack_launches_list) ? end($endtrack_launches_list) : 'legacy';
 $active_launch = isset($_GET['launch']) ? sanitize_text_field($_GET['launch']) : $default_launch;
-$filter_date_start = isset($_GET['d_start']) ? sanitize_text_field($_GET['d_start']) : date('Y-m-d', strtotime('-30 days'));
-$filter_date_end = isset($_GET['d_end']) ? sanitize_text_field($_GET['d_end']) : date('Y-m-d');
+// Fechas del lanzamiento (endtrack_launch_configs[lanz]: desde / hasta / venta_desde). Si la URL no
+// trae fechas, se abre en las del lanzamiento; los que no las tienen siguen con los últimos 30 días.
+$launch_configs = (array) get_option('endtrack_launch_configs', array());
+$launch_window = isset($launch_configs[$active_launch]) && is_array($launch_configs[$active_launch]) ? $launch_configs[$active_launch] : array();
+$filter_date_start = isset($_GET['d_start']) ? sanitize_text_field($_GET['d_start']) : (!empty($launch_window['desde']) ? $launch_window['desde'] : date('Y-m-d', strtotime('-30 days')));
+$filter_date_end = isset($_GET['d_end']) ? sanitize_text_field($_GET['d_end']) : (!empty($launch_window['hasta']) ? $launch_window['hasta'] : date('Y-m-d'));
 $filter_source = isset($_GET['var_source']) ? sanitize_text_field($_GET['var_source']) : '';
 $filter_medium = isset($_GET['var_medium']) ? sanitize_text_field($_GET['var_medium']) : '';
 $filter_campaign = isset($_GET['var_campaign']) ? sanitize_text_field($_GET['var_campaign']) : '';
@@ -81,7 +85,10 @@ if ($active_launch) {
             if (!empty($pages_query->posts)) {
                 $ids = implode(',', array_map('intval', $pages_query->posts));
                 $where_v .= " AND id_pag IN ($ids)";
-                $where_d .= " AND id_pag IN ($ids)";
+                // Registros: NO se limitan a las páginas de la categoría (pulsar, 3-nov-2026). tipo_cat_<lanz> > 0
+                // ya dice que son del lanzamiento, y así cuentan también los de un clic desde la gracias de
+                // la newsletter (suscripcion-confirmada) y el oneclick: los mismos registros que pulsar. Las
+                // visitas sí siguen limitadas a las páginas del lanzamiento.
                 // Para el desplegable de "Página": solo las de este lanzamiento.
                 $launch_page_ids = array_map('intval', $pages_query->posts);
             }
@@ -1255,16 +1262,34 @@ $endtrack_nonce = wp_create_nonce('endtrack_load_section');
                 <input type="hidden" name="count_mode" value="<?php echo esc_attr($count_mode); ?>" id="count_mode_hidden">
                 <div class="filter-group">
                     <label>Lanzamiento</label>
-                    <select name="launch" onchange="this.form.submit()">
+                    <select name="launch" onchange="endtrackCambiaLanzamiento(this)" data-desde="<?php echo esc_attr($launch_window['desde'] ?? ''); ?>" data-hasta="<?php echo esc_attr($launch_window['hasta'] ?? ''); ?>">
                         <option value="legacy" <?php selected($active_launch, 'legacy'); ?>>Anteriores</option>
                         <?php
                         $launches = get_option('endtrack_launches', array());
                         foreach (array_reverse($launches) as $l): ?>
-                            <option value="<?php echo esc_attr($l); ?>" <?php selected($active_launch, $l); ?>>
+                            <option value="<?php echo esc_attr($l); ?>" <?php selected($active_launch, $l); ?> data-desde="<?php echo esc_attr($launch_configs[$l]['desde'] ?? ''); ?>" data-hasta="<?php echo esc_attr($launch_configs[$l]['hasta'] ?? ''); ?>">
                                 <?php echo esc_html(ucfirst($l)); ?>
                             </option>
                         <?php endforeach; ?>
                     </select>
+                    <script>
+                    // Al cambiar de lanzamiento: si tiene fechas, se abre en ellas; si no las tiene y veníamos
+                    // con las fechas del anterior sin tocar, se vuelve al rango por defecto (no se arrastran).
+                    function endtrackCambiaLanzamiento(sel) {
+                        var f = sel.form, o = sel.options[sel.selectedIndex];
+                        var ini = f.querySelector('[name="d_start"]'), fin = f.querySelector('[name="d_end"]');
+                        if (ini && fin) {
+                            if (o.dataset.desde) {
+                                ini.value = o.dataset.desde;
+                                fin.value = o.dataset.hasta || fin.value;
+                            } else if (sel.dataset.desde && ini.value === sel.dataset.desde && fin.value === sel.dataset.hasta) {
+                                ini.disabled = true;
+                                fin.disabled = true;
+                            }
+                        }
+                        f.submit();
+                    }
+                    </script>
                 </div>
 
                 <div class="filter-group">
