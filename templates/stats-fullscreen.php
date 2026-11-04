@@ -19,11 +19,20 @@ $table_posts = $wpdb->prefix . 'posts';
 
 // === 1. Filters & Context ===
 $endtrack_launches_list = get_option('endtrack_launches', array());
-$default_launch = !empty($endtrack_launches_list) ? end($endtrack_launches_list) : 'legacy';
+$launch_configs = (array) get_option('endtrack_launch_configs', array());
+// Por defecto, el último lanzamiento CON registro: los de venta directa (endtrack_launch_configs[lanz]['venta_directa'])
+// no tienen páginas de registro y aquí saldrían vacíos.
+$default_launch = 'legacy';
+foreach (array_reverse((array) $endtrack_launches_list) as $l) {
+    if (empty($launch_configs[$l]['venta_directa'])) {
+        $default_launch = $l;
+        break;
+    }
+}
 $active_launch = isset($_GET['launch']) ? sanitize_text_field($_GET['launch']) : $default_launch;
+$is_venta_directa = !empty($launch_configs[$active_launch]['venta_directa']);
 // Fechas del lanzamiento (endtrack_launch_configs[lanz]: desde / hasta / venta_desde). Si la URL no
 // trae fechas, se abre en las del lanzamiento; los que no las tienen siguen con los últimos 30 días.
-$launch_configs = (array) get_option('endtrack_launch_configs', array());
 $launch_window = isset($launch_configs[$active_launch]) && is_array($launch_configs[$active_launch]) ? $launch_configs[$active_launch] : array();
 $filter_date_start = isset($_GET['d_start']) ? sanitize_text_field($_GET['d_start']) : (!empty($launch_window['desde']) ? $launch_window['desde'] : date('Y-m-d', strtotime('-30 days')));
 $filter_date_end = isset($_GET['d_end']) ? sanitize_text_field($_GET['d_end']) : (!empty($launch_window['hasta']) ? $launch_window['hasta'] : date('Y-m-d'));
@@ -217,14 +226,36 @@ if ($active_launch && $active_launch !== 'legacy') {
 $total_sessions = $wpdb->get_var("SELECT $visit_count_expr FROM $table_visitas $sql_v");
 // Apply the exact condition logic to ensure it ONLY fetches regs when they are the primary registration for the launch
 $total_regs = $wpdb->get_var("SELECT COUNT(*) FROM $table_datos $sql_d $primer_reg_cond_total");
-// 'Por Landing' (target_regs) EXCLUDES lista de espera and oneclick correo; CVR uses target_regs directly
-$target_regs = $wpdb->get_var("SELECT COUNT(*) FROM $table_datos $sql_d $primer_reg_cond_total AND (placement != 'correo' OR placement IS NULL) AND (LOWER(medium) != 'lista de espera' OR medium IS NULL)");
+// Bloques de registro (mismos criterios que el conector de pulsar, mu-plugin endtrack-mcp.php). Cada alta cae en uno:
+//  - lista de espera: cualquier variante del medio («lista de espera», «listadeespera», la errata «Iistadeespera»).
+//  - eventos: asistentes a eventos importados (medio 'importado_eventos').
+//  - oneclick: el medio contiene «oneclick» (hasta oct-2026 se guardaban con IP y sin placement 'correo') o placement 'correo'.
+//  - por landing: el resto. La conversión (CVR) usa solo este bloque.
+$es_espera = "REPLACE(REPLACE(LOWER(IFNULL(medium, '')), ' ', ''), '-', '') IN ('listadeespera', 'iistadeespera')";
+$es_eventos = "(LOWER(IFNULL(medium, '')) = 'importado_eventos' OR IFNULL(placement, '') = 'importados de eventos')";
+$es_oneclick_base = "(REPLACE(LOWER(IFNULL(medium, '')), '_', '') LIKE '%oneclick%' OR IFNULL(placement, '') = 'correo')";
+$es_oneclick = "($es_oneclick_base AND NOT $es_espera AND NOT $es_eventos)";
+$es_landing = "NOT ($es_oneclick_base OR $es_espera OR $es_eventos)";
+$target_regs = $wpdb->get_var("SELECT COUNT(*) FROM $table_datos $sql_d $primer_reg_cond_total AND $es_landing");
 $cvr = ($total_sessions > 0) ? ($target_regs / $total_sessions) * 100 : 0;
+// Lanzamientos sin visitas en ENDTRACK (2023-2024: el tracking de visitas empieza en dic-2024): las visitas salen
+// de GA4 (tabla uBCFl_endtrack_visitas_ga4, usuarios de las páginas de registro en TODO el lanzamiento). Por eso
+// solo con las fechas del lanzamiento y sin filtros. GA4 cuenta usuarios por cookie, no IPs.
+if ((int) $total_sessions === 0 && $filter_source === '' && $filter_medium === '' && $filter_campaign === '' && $filter_afiliado === '' && $filter_page === ''
+    && !empty($launch_window['desde']) && $filter_date_start === $launch_window['desde'] && $filter_date_end === $launch_window['hasta']) {
+    $ga4_total = $wpdb->get_row($wpdb->prepare("SELECT usuarios, sesiones FROM {$wpdb->prefix}endtrack_visitas_ga4 WHERE lanzamiento = %s AND dimension = 'total'", $active_launch));
+    if ($ga4_total && (int) $ga4_total->usuarios > 0) {
+        $total_sessions = ($count_mode === 'unique_ip') ? (int) $ga4_total->usuarios : (int) $ga4_total->sesiones;
+        $visit_label = ($count_mode === 'unique_ip') ? 'Usuarios (GA4)' : 'Sesiones (GA4)';
+        $cvr = ($target_regs / $total_sessions) * 100;
+    }
+}
 // Regs by Type
-$oneclick_regs = $wpdb->get_var("SELECT COUNT(*) FROM $table_datos $sql_d $primer_reg_cond_total AND placement = 'correo'");
+$oneclick_regs = $wpdb->get_var("SELECT COUNT(*) FROM $table_datos $sql_d $primer_reg_cond_total AND $es_oneclick");
+$eventos_regs = (int) $wpdb->get_var("SELECT COUNT(*) FROM $table_datos $sql_d $primer_reg_cond_total AND $es_eventos");
 $buyers_regs = $wpdb->get_var("SELECT COUNT(*) FROM $table_datos $sql_d $primer_reg_cond_buyer");
-// Lista de espera: rows where medium='lista de espera' + legacy primer_reg=5 marker
-$lista_espera_medium_regs = (int) $wpdb->get_var("SELECT COUNT(*) FROM $table_datos $sql_d $primer_reg_cond_total AND LOWER(medium) = 'lista de espera'");
+// Lista de espera: rows where medium='lista de espera' (o sus variantes) + legacy primer_reg=5 marker
+$lista_espera_medium_regs = (int) $wpdb->get_var("SELECT COUNT(*) FROM $table_datos $sql_d $primer_reg_cond_total AND $es_espera");
 $waitlist_regs = (int) $wpdb->get_var("SELECT COUNT(*) FROM $table_datos $sql_d $primer_reg_cond_lead");
 $lista_espera_regs = $lista_espera_medium_regs + $waitlist_regs;
 
@@ -237,9 +268,9 @@ if ($active_launch && $active_launch !== 'legacy') {
 }
 
 // Granular Breakdown for "Por Web" — also excludes lista de espera
-$target_regs_org = $wpdb->get_var("SELECT COUNT(*) FROM $table_datos $sql_d $primer_reg_cond_total AND (placement != 'correo' OR placement IS NULL) AND (LOWER(medium) != 'lista de espera' OR medium IS NULL) AND source = 'organico'");
-$target_regs_pub = $wpdb->get_var("SELECT COUNT(*) FROM $table_datos $sql_d $primer_reg_cond_total AND (placement != 'correo' OR placement IS NULL) AND (LOWER(medium) != 'lista de espera' OR medium IS NULL) AND (source = 'publicidad' OR source = 'Publicidad')");
-$target_regs_aff = $wpdb->get_var("SELECT COUNT(*) FROM $table_datos $sql_d $primer_reg_cond_total AND (placement != 'correo' OR placement IS NULL) AND (LOWER(medium) != 'lista de espera' OR medium IS NULL) AND (afiliado > 0 AND afiliado != '')");
+$target_regs_org = $wpdb->get_var("SELECT COUNT(*) FROM $table_datos $sql_d $primer_reg_cond_total AND $es_landing AND source = 'organico'");
+$target_regs_pub = $wpdb->get_var("SELECT COUNT(*) FROM $table_datos $sql_d $primer_reg_cond_total AND $es_landing AND (source = 'publicidad' OR source = 'Publicidad')");
+$target_regs_aff = $wpdb->get_var("SELECT COUNT(*) FROM $table_datos $sql_d $primer_reg_cond_total AND $es_landing AND (afiliado > 0 AND afiliado != '')");
 
 
 $dashboard = [];
@@ -254,7 +285,7 @@ $dashboard['sections'][] = [
         ['type' => 'kpi', 'title' => $visit_label, 'value' => number_format((float) $total_sessions, 0, ',', '.'), 'color' => 'pink'],
         ['type' => 'kpi', 'title' => '% Conversión', 'value' => number_format((float) $cvr, 1, ',', '.') . '%', 'color' => 'orange'],
         ['type' => 'kpi', 'title' => 'Registrados TOTALES', 'value' => number_format((float) $total_regs, 0, ',', '.') . "<br><small style='opacity:0.7; font-size:13px; font-weight:600;'>Lista de espera: " . number_format($lista_espera_regs, 0, ',', '.') . "</small><br><small style='opacity:0.6; font-size:12px; font-weight:600;'>Re-inscripciones (primer_reg=0): " . number_format($repeat_regs, 0, ',', '.') . "</small>", 'color' => 'purple'],
-        ['type' => 'kpi', 'title' => 'Desglose por bloque', 'value' => "Por Landing: $target_regs <br><small style='opacity:0.8'>Org: $target_regs_org <br> Pub: $target_regs_pub <br> Aff: $target_regs_aff</small> <br> Oneclick: $oneclick_regs <br> Lista de espera: $lista_espera_regs", 'color' => 'purple', 'text_size' => 'small'],
+        ['type' => 'kpi', 'title' => 'Desglose por bloque', 'value' => "Por Landing: $target_regs <br><small style='opacity:0.8'>Org: $target_regs_org <br> Pub: $target_regs_pub <br> Aff: $target_regs_aff</small> <br> Oneclick: $oneclick_regs <br> Lista de espera: $lista_espera_regs" . ($eventos_regs > 0 ? " <br> Eventos: $eventos_regs" : ''), 'color' => 'purple', 'text_size' => 'small'],
         [
             'type' => 'funnel',
             'title' => 'Funnel Completo',
@@ -1298,7 +1329,7 @@ $endtrack_nonce = wp_create_nonce('endtrack_load_section');
                         $launches = get_option('endtrack_launches', array());
                         foreach (array_reverse($launches) as $l): ?>
                             <option value="<?php echo esc_attr($l); ?>" <?php selected($active_launch, $l); ?> data-desde="<?php echo esc_attr($launch_configs[$l]['desde'] ?? ''); ?>" data-hasta="<?php echo esc_attr($launch_configs[$l]['hasta'] ?? ''); ?>">
-                                <?php echo esc_html(ucfirst($l)); ?>
+                                <?php echo esc_html(ucfirst($l)) . (!empty($launch_configs[$l]['venta_directa']) ? ' · venta directa' : ''); ?>
                             </option>
                         <?php endforeach; ?>
                     </select>
@@ -1416,6 +1447,14 @@ $endtrack_nonce = wp_create_nonce('endtrack_load_section');
                 endif; ?>
             </form>
         </div><!-- /.header -->
+
+        <?php if ($is_venta_directa): ?>
+            <div style="margin:0 0 20px; padding:14px 18px; border-radius:12px; border:1px solid rgba(251,191,36,.35); background:rgba(251,191,36,.08); color:#fde68a; font-size:14px; line-height:1.5;">
+                <i class="fas fa-info-circle"></i>
+                <strong><?php echo esc_html(ucfirst($active_launch)); ?></strong> es un lanzamiento de <strong>venta directa</strong>: no tiene páginas de registro, así que aquí no hay visitas ni registros que medir.
+                Sus ventas están en <a href="<?php echo esc_url(home_url('/endtrack-estadisticas-ventas/?launch=' . rawurlencode($active_launch))); ?>" style="color:#fbbf24; font-weight:700;">Estadísticas de ventas →</a>
+            </div>
+        <?php endif; ?>
 
         <div class="quick-nav">
             <a href="#sec_kpi" class="btn-nav"><i class="fas fa-tachometer-alt"></i> KPIs</a>
