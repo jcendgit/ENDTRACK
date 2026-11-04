@@ -676,31 +676,61 @@ $endtrack_nonce = wp_create_nonce('endtrack_load_section');
             letter-spacing: -1px;
         }
 
+        /* Filtros en UNA línea: los desplegables se reparten el ancho; si no cabe, la fila
+           se desplaza en horizontal en vez de partirse en dos. */
         .filters-panel {
             background: var(--card-bg);
-            padding: 20px;
+            padding: 12px 14px;
             border-radius: 16px;
             border: 1px solid var(--card-border);
             backdrop-filter: blur(10px);
             display: flex;
-            flex-wrap: wrap;
-            gap: 15px;
+            flex-wrap: nowrap;
+            overflow-x: auto;
+            gap: 8px;
             align-items: flex-end;
         }
 
         .filter-group {
             display: flex;
             flex-direction: column;
-            gap: 6px;
-            flex: 1;
+            gap: 4px;
+            flex: 1 1 0;
+            min-width: 90px;
+        }
+
+        .filters-panel .filter-group.fijo {
+            flex: 0 0 auto;
+        }
+
+        .filters-panel .filter-group.ancho {
+            flex: 1.7 1 0;
             min-width: 150px;
         }
 
+        .filters-panel select,
+        .filters-panel input[type="date"] {
+            padding: 7px 8px;
+            font-size: 12px;
+        }
+
+        .filters-panel input[type="date"] {
+            width: 128px;
+        }
+
+        .filters-panel .btn-filter {
+            padding: 8px 12px;
+            font-size: 12px;
+            white-space: nowrap;
+            flex: 0 0 auto;
+        }
+
         .filter-group label {
-            font-size: 11px;
+            font-size: 10px;
             font-weight: 700;
             color: var(--text-muted);
             text-transform: uppercase;
+            white-space: nowrap;
         }
 
         select,
@@ -1260,7 +1290,7 @@ $endtrack_nonce = wp_create_nonce('endtrack_load_section');
 
             <form method="GET" class="filters-panel">
                 <input type="hidden" name="count_mode" value="<?php echo esc_attr($count_mode); ?>" id="count_mode_hidden">
-                <div class="filter-group">
+                <div class="filter-group ancho">
                     <label>Lanzamiento</label>
                     <select name="launch" onchange="endtrackCambiaLanzamiento(this)" data-desde="<?php echo esc_attr($launch_window['desde'] ?? ''); ?>" data-hasta="<?php echo esc_attr($launch_window['hasta'] ?? ''); ?>">
                         <option value="legacy" <?php selected($active_launch, 'legacy'); ?>>Anteriores</option>
@@ -1357,16 +1387,16 @@ $endtrack_nonce = wp_create_nonce('endtrack_load_section');
                     </select>
                 </div>
 
-                <div class="filter-group" style="min-width: 120px;">
+                <div class="filter-group fijo">
                     <label>Desde</label>
                     <input type="date" name="d_start" value="<?php echo $filter_date_start; ?>">
                 </div>
-                <div class="filter-group" style="min-width: 120px;">
+                <div class="filter-group fijo">
                     <label>Hasta</label>
                     <input type="date" name="d_end" value="<?php echo $filter_date_end; ?>">
                 </div>
 
-                <div class="filter-group">
+                <div class="filter-group fijo">
                     <label>Conteo de visitas</label>
                     <div style="display:flex; gap:0; border-radius:8px; overflow:hidden; border:1px solid rgba(255,255,255,0.15);">
                         <button type="submit" class="btn-filter" onclick="document.getElementById('count_mode_hidden').value='sessions';" style="border-radius:0; margin:0; <?php echo ($count_mode === 'sessions') ? 'background:linear-gradient(135deg,#ec4899,#a855f7);' : 'background:rgba(255,255,255,0.08); box-shadow:none;'; ?>">
